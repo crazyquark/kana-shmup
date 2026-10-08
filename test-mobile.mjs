@@ -57,6 +57,7 @@ check(true, `tapping "${target}" on the on-screen keyboard destroyed the ship`);
    letter completes the word and clears the buffer before this can check it. */
 await page.evaluate(() => {
   KanaShmup.enemies.forEach(e => { e.alive = false; });
+  KanaShmup.state.spawnIn = 1e9;
   KanaShmup.spawn({ glyph: 'ぱ', romaji: 'pa', key: 'h65' });
 });
 await page.tap('#mobileKb .kbkey[data-k="p"]');
