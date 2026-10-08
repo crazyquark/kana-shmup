@@ -59,15 +59,17 @@ check(after.correct === 1 && after.typed === 1, 'attempt/accuracy counters incre
 check(after.buffer === '', 'buffer clears after a kill');
 check(after.inScene === 0, 'destroyed ship is reaped from the scene graph (no leak)');
 
-/* ---------- partial word: highlight, don't fire, don't give the answer away ---------- */
-await waitForShip();
+/* ---------- partial word: highlight, don't fire, don't give the answer away ----------
+   Deterministically spawn a multi-letter kana rather than trusting whatever the
+   (now always-singular) live ship happens to be — it could be "n" (ん), the one
+   single-letter romaji, which would complete on the very first keystroke. */
 const pick = await page.evaluate(() => {
-  // an enemy whose first letter doesn't itself complete some other ship
-  const e = KanaShmup.enemies.filter(x => x.alive && x.entry.romaji.length > 1)
-    .find(x => !KanaShmup.enemies.some(o => o.alive && o.entry.romaji === x.entry.romaji[0]));
-  return e ? { romaji: e.entry.romaji, glyph: e.entry.glyph } : null;
+  KanaShmup.enemies.forEach(e => { e.alive = false; });
+  const e = KanaShmup.spawn({ glyph: 'みゃ', romaji: 'mya', key: 'h83' });
+  e.g.position.y = 0; e.speed = 0; e.drift = 0;
+  return { romaji: e.entry.romaji, glyph: e.entry.glyph };
 });
-if (pick){
+{
   const killsBefore = await page.evaluate(() => KanaShmup.state.kills);
   await page.keyboard.type(pick.romaji[0], { delay: 40 });
   await page.waitForTimeout(250);
@@ -82,8 +84,6 @@ if (pick){
   await page.keyboard.press('Backspace');
   await page.waitForTimeout(150);
   check(await page.evaluate(() => KanaShmup.state.buffer) === '', 'Backspace clears the buffer');
-} else {
-  check(false, 'found a multi-char enemy to test partial input');
 }
 
 /* ---------- wrong key ---------- */
@@ -138,21 +138,17 @@ await page.click('#resumeBtn');
 await page.waitForTimeout(200);
 check(!(await page.locator('#pauseScreen').isVisible()), 'resume works');
 
-// A deliberate lineup so the screenshot shows glyphs at varying sizes, including
-// a digraph (きゃ) which uses a smaller font size in the canvas texture.
+// Gameplay only ever shows one ship at a time now, so the screenshot should
+// show exactly that — a digraph (きゃ), which uses a smaller font size in the
+// canvas texture, to also prove that renders cleanly.
 await page.evaluate(() => {
   KanaShmup.enemies.forEach(e => { e.alive = false; });
   KanaShmup.state.spawnIn = 1e9;
-  [['か', 'ka', 'h5'], ['つ', 'tsu', 'h17'], ['ん', 'n', 'h45'],
-   ['きゃ', 'kya', 'h71'], ['しょ', 'sho', 'h77']].forEach(([glyph, romaji, key], i) => {
-    const e = KanaShmup.spawn({ glyph, romaji, key });
-    e.g.position.y = 32 - i * 17;
-    e.g.position.x = (i - 2) * 17;
-    e.x0 = e.g.position.x; e.speed = 0; e.drift = 0;
-  });
+  const e = KanaShmup.spawn({ glyph: 'きゃ', romaji: 'kya', key: 'h71' });
+  e.g.position.y = 10; e.x0 = 0; e.speed = 0; e.drift = 0;
 });
 await page.waitForTimeout(700);
-check((await page.evaluate(() => KanaShmup.liveEnemies())).length === 5, 'lineup staged for the screenshot');
+check((await page.evaluate(() => KanaShmup.liveEnemies())).length === 1, 'single ship staged for the screenshot');
 await page.screenshot({ path: 'shot-gameplay.png' });
 
 /* ---------- game over ---------- */
@@ -183,17 +179,12 @@ const kata = await page.evaluate(() => KanaShmup.liveEnemies().map(e => e.glyph)
 const isKata = kata.length > 0 && kata.every(g => [...g].every(c => c.codePointAt(0) >= 0x30a0 && c.codePointAt(0) <= 0x30ff));
 check(isKata, `katakana mode spawns only katakana (${kata.join(' ')})`);
 
-// stage a lineup in view so the screenshot can be inspected for glyph rendering
+// Same — one ship, matching real gameplay.
 await page.evaluate(() => {
   KanaShmup.enemies.forEach(e => { e.alive = false; });
   KanaShmup.state.spawnIn = 1e9;
-  [['カ', 'ka', 'k5'], ['ツ', 'tsu', 'k17'], ['ン', 'n', 'k45'],
-   ['キャ', 'kya', 'k71'], ['ショ', 'sho', 'k77']].forEach(([glyph, romaji, key], i) => {
-    const e = KanaShmup.spawn({ glyph, romaji, key });
-    e.g.position.y = 30 - i * 19;
-    e.g.position.x = (i - 2) * 17;
-    e.x0 = e.g.position.x; e.speed = 0; e.drift = 0;
-  });
+  const e = KanaShmup.spawn({ glyph: 'ツ', romaji: 'tsu', key: 'k17' });
+  e.g.position.y = 10; e.x0 = 0; e.speed = 0; e.drift = 0;
 });
 await page.waitForTimeout(700);
 await page.screenshot({ path: 'shot-katakana.png' });

@@ -1,8 +1,8 @@
 # Kana Shmup — かなシューティング
 
-A small Three.js shmup for drilling hiragana and katakana. Ships drift down
-carrying a kana; **you destroy one by typing its romaji.** Let a ship reach the
-bottom and you lose a life.
+A small Three.js shmup for drilling hiragana and katakana. One ship drifts
+down at a time, carrying a kana; **you destroy it by typing its romaji**, and
+the next appears right away. Let it reach the bottom and you lose a life.
 
 ## Running it
 
@@ -48,9 +48,11 @@ never overlap.
 
 ## How the drill works
 
-- **Targeting.** What you type matches against the *lowest* ship whose romaji
-  still fits what you've typed — the most urgent one. Matching ships are
-  highlighted, so you can see the lock before you finish the word.
+- **One at a time.** Only one ship is ever on screen — no triage, no picking
+  which of several to engage. See a kana, recall it, type it, the next one
+  appears as soon as it's gone. Waves still ramp difficulty by making the
+  single ship fall faster and (from wave 3) shoot at you, never by crowding
+  the screen.
 - **The answer is never shown.** Once you start a word the buffer shows your
   progress and placeholders, never the remaining letters. Handing over the rest
   of the word after the first keystroke would defeat the point for `tsu`,

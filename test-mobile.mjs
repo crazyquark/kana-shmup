@@ -51,13 +51,16 @@ for (const ch of target) {
 await page.waitForFunction(s => KanaShmup.state.score > s, scoreBefore, { timeout: 3000 });
 check(true, `tapping "${target}" on the on-screen keyboard destroyed the ship`);
 
-/* ---------- backspace key ---------- */
-await waitForShip();
-const t2 = await page.evaluate(() => KanaShmup.liveEnemies()[0].romaji);
-await page.tap(`#mobileKb .kbkey[data-k="${t2[0]}"]`);
-check((await page.evaluate(() => KanaShmup.state.buffer ?? document.getElementById('buffer').textContent)).length > 0 ||
-  (await page.locator('#buffer').textContent()).length > 0,
-  'buffer shows the tapped letter');
+/* ---------- backspace key ----------
+   Deterministically spawn a multi-letter kana rather than trusting whatever
+   the live ship happens to be — "n" (ん) is one letter, and tapping its only
+   letter completes the word and clears the buffer before this can check it. */
+await page.evaluate(() => {
+  KanaShmup.enemies.forEach(e => { e.alive = false; });
+  KanaShmup.spawn({ glyph: 'ぱ', romaji: 'pa', key: 'h65' });
+});
+await page.tap('#mobileKb .kbkey[data-k="p"]');
+check((await page.locator('#buffer').textContent()).trim().length > 0, 'buffer shows the tapped letter');
 await page.tap('#mobileKb .kbkey.bksp');
 check((await page.locator('#buffer').textContent()).trim() === '', 'on-screen Backspace clears the buffer');
 

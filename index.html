@@ -702,13 +702,21 @@ function spawnBullet(from){
    7. GAME STATE
    ========================================================================== */
 
+// With only one kana on screen at a time, a kill/escape shouldn't leave the
+// field empty until the next spawnIn timer happens to expire (up to 1.5s) —
+// cap the wait so the next ship appears promptly.
+const RESPAWN_GAP = 0.35;
+
 const S = {
   running: false, over: false, paused: false,
   mode: 'hiragana', pool: [], difficulty: 3,
   score: 0, wave: 1, lives: 3,
   kills: 0, typed: 0, correct: 0,
   buffer: '', target: null,
-  spawnIn: 0, spawnEvery: 1.5, speed: 5.5, maxOnScreen: 3,
+  // maxOnScreen is fixed at 1 — one kana to read and type at a time. Waves
+  // still ramp difficulty (falling speed, how soon the next one can fire),
+  // just never by crowding the screen.
+  spawnIn: 0, spawnEvery: 1.5, speed: 5.5, maxOnScreen: 1,
   elapsed: 0, combo: 0, bestCombo: 0, invuln: 0,
   missedSetup: new Set(),
 };
@@ -883,6 +891,7 @@ function handleChar(k){
 
     killEnemy(victim);
     Audio_.kill(0.8 + Math.min(S.combo, 8) * 0.06);
+    S.spawnIn = Math.min(S.spawnIn, RESPAWN_GAP);
     S.buffer = '';
     setBuffer('');
     retarget();
@@ -944,7 +953,7 @@ function resetGame(){
   S.score = 0; S.wave = 1; S.lives = 3;
   S.kills = 0; S.typed = 0; S.correct = 0;
   S.buffer = ''; S.target = null;
-  S.spawnIn = 0.7; S.spawnEvery = 1.5; S.speed = 5.5; S.maxOnScreen = 3;
+  S.spawnIn = 0.7; S.spawnEvery = 1.5; S.speed = 5.5; S.maxOnScreen = 1;
   S.elapsed = 0; S.combo = 0; S.bestCombo = 0; S.invuln = 0;
 
   player.position.set(0, -38, 0);
@@ -1016,12 +1025,14 @@ function update(dt){
   }
 
   // ---- wave curve ----
+  // Enemy count never scales up (maxOnScreen is a fixed 1) — only the fall
+  // speed and the floor on back-to-back spawn gap do, from the fixed pool of
+  // one.
   const w = 1 + Math.floor(S.elapsed / 26);
   if (w !== S.wave){
     S.wave = w;
     S.spawnEvery = Math.max(0.62, 1.5 - (w - 1) * 0.11);
     S.speed = 5.5 + (w - 1) * 1.15;
-    S.maxOnScreen = Math.min(7, 3 + Math.floor(w / 2));
     refreshHud();
   }
 
@@ -1061,6 +1072,7 @@ function update(dt){
       flashToast(`${e.entry.glyph} = ${e.entry.romaji}`);
       scene.remove(e.g);
       enemies.splice(i, 1);
+      S.spawnIn = Math.min(S.spawnIn, RESPAWN_GAP);
       loseLife('escape');
       if (!S.running) return;
       if (S.target === e){ S.buffer = ''; setBuffer(''); retarget(); }
