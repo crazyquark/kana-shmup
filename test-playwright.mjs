@@ -204,6 +204,26 @@ await page.click('.modes button[data-mode="both"]');
 await page.click('#startBtn');
 check(await page.evaluate(() => KanaShmup.state.pool.length) === 208, '"both" mode pools hiragana + katakana');
 
+/* ---------- difficulty slider ---------- */
+await boot();
+await page.click('.modes button[data-mode="hiragana"]');
+check(await page.locator('#diffSlider').inputValue() === '3', 'difficulty defaults to 3 (full table)');
+
+await page.fill('#diffSlider', '1');
+await page.dispatchEvent('#diffSlider', 'input');
+check((await page.locator('#diffName').innerText()).includes('Basic'), 'difficulty label updates to Basic kana');
+await page.click('#startBtn');
+let diffPool = await page.evaluate(() => KanaShmup.state.pool);
+check(diffPool.length === 46, `difficulty 1 pool is 46 (basic only, got ${diffPool.length})`);
+check(diffPool.every(p => [...p.glyph].length === 1), 'difficulty 1 pool has no digraphs');
+
+await boot();
+await page.fill('#diffSlider', '2');
+await page.dispatchEvent('#diffSlider', 'input');
+await page.click('#startBtn');
+diffPool = await page.evaluate(() => KanaShmup.state.pool);
+check(diffPool.length === 71, `difficulty 2 pool is 71 (basic + dakuten, got ${diffPool.length})`);
+
 /* ---------- every glyph must fit its sprite canvas without clipping ---------- */
 const clipped = await page.evaluate(() => {
   const bad = [];

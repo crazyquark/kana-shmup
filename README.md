@@ -14,6 +14,7 @@ CDN.
 Prefer a local server? Anything works:
 
     python3 -m http.server 8765     # then open http://localhost:8765/
+    node server.mjs                 # or the dependency-free Node server, :8080
 
 ## Controls
 
@@ -26,6 +27,24 @@ Prefer a local server? Anything works:
 
 Arrow keys / WASD fly the ship, which matters once enemies start shooting back
 from wave 3.
+
+### Touch / mobile
+
+On a touch device (anything with a coarse pointer — phones, tablets) the
+keyboard controls above are replaced automatically, no setting to flip:
+
+- **Typing** — an on-screen QWERTY panel docks at the bottom once a run
+  starts. It drives the exact same targeting/miss logic as a physical
+  keyboard, including Backspace.
+- **Movement** — drag a finger anywhere on the play field (the area above the
+  keyboard) and the ship follows the motion.
+- **Pause** — there's no Esc on a phone, so a small pause button sits at the
+  top of the on-screen keyboard. The pause screen has a "Quit to menu" button
+  for the same reason (that button also now works for mouse/desktop users,
+  who previously had no clickable way to quit — only the `Q` key).
+
+The canvas is sized to the space above the keyboard, so gameplay and typing
+never overlap.
 
 ## How the drill works
 
@@ -47,11 +66,29 @@ from wave 3.
 Hiragana, Katakana, or Both. Both scripts share the romaji, so `じ` and `ジ` are
 both `ji` — the same sound, different script.
 
+## Difficulty
+
+A slider on the title screen caps how much of the kana table is in play. The
+tables are laid out in difficulty order, so each level is a prefix of the
+next — nothing you've unlocked disappears as you go up:
+
+| Level | Adds | Pool size (per script) |
+|---|---|---|
+| 1 — Basic | the 46 plain kana (あ, か, さ … no diacritics) | 46 |
+| 2 — + Tenten | the 25 dakuten/handakuten (゛゜ — が, ざ, だ, ば, ぱ rows) | 71 |
+| 3 — + Combined | the 33 digraphs (きゃ, しゃ, ちょ …) | 104 |
+
+Defaults to 3 (the full table), so existing behavior and save data are
+unaffected if you never touch the slider.
+
 ## Contents
 
     index.html                 the whole game (data, logic, rendering)
+    server.mjs                 dependency-free static file server (Node)
     verify.mjs                 static checks — data integrity, DOM ids, syntax
-    test-playwright.mjs        drives the real game in a real browser
+    test-playwright.mjs        drives the real game in a real (desktop) browser
+    test-mobile.mjs            same, under touch emulation — on-screen keyboard,
+                                drag-to-move, pause/quit buttons
     check-file-protocol.mjs    confirms it runs from file://
     shot-*.png                 screenshots produced by the test run
 
@@ -61,17 +98,22 @@ both `ji` — the same sound, different script.
     npm i -D playwright && npx playwright install chromium
     python3 -m http.server 8765 &                      # tests need the server
     node test-playwright.mjs
+    node test-mobile.mjs
 
-`verify.mjs` parses the module, runs the shipping kana tables and `buildPool`,
-and checks every DOM id the game reaches for actually exists. `test-playwright.mjs`
-plays the game: it types romaji, checks partial words don't fire, that the answer
-isn't leaked, that escapes and bullets cost lives, that pause freezes the world,
-and — most usefully — that **all 104 romaji are typeable**. That last one exists
-because it caught a real bug: `m` was bound to the mute toggle, which silently
-made ma/mi/mu/me/mo/mya/myu/myo impossible to answer.
+`verify.mjs` parses the module, runs the shipping kana tables, `buildPool`, and
+the difficulty cutoffs, and checks every DOM id the game reaches for actually
+exists. `test-playwright.mjs` plays the game on desktop: it types romaji,
+checks partial words don't fire, that the answer isn't leaked, that escapes
+and bullets cost lives, that pause freezes the world, that the difficulty
+slider actually changes the pool, and — most usefully — that **all 104 romaji
+are typeable**. That last one exists because it caught a real bug: `m` was
+bound to the mute toggle, which silently made ma/mi/mu/me/mo/mya/myu/myo
+impossible to answer. `test-mobile.mjs` runs the same game under touch
+emulation and drives the on-screen keyboard and drag gestures directly.
 
 ## Coverage
 
 104 kana per script: the 46 basic, 25 dakuten/handakuten, and 33 digraphs
-(きゃ, しゃ, ちょ …). Not yet included: small tsu (っ — needs doubled consonants),
-long vowel mark (ー), and the katakana-only extended set (ヴ, ファ …).
+(きゃ, しゃ, ちょ …) — see [Difficulty](#difficulty) for how these are staged.
+Not yet included: small tsu (っ — needs doubled consonants), long vowel mark
+(ー), and the katakana-only extended set (ヴ, ファ …).

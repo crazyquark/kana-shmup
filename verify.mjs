@@ -25,12 +25,12 @@ try {
 // Slice the shipping source (not a copy) from the ROMAJI declaration through
 // the end of buildPool, so this exercises the code the game actually runs.
 const start = modSrc.indexOf('const ROMAJI = [');
-const endMarker = 'function buildPool(mode){';
+const endMarker = 'function buildPool(mode, difficulty = 3){';
 const end = modSrc.indexOf('}', modSrc.indexOf('return out;', modSrc.indexOf(endMarker))) + 1;
 const slice = modSrc.slice(start, end);
 
-const { ROMAJI, HIRAGANA, KATAKANA, buildPool } = await import(
-  'data:text/javascript,' + encodeURIComponent(slice + '\nexport { ROMAJI, HIRAGANA, KATAKANA, buildPool };')
+const { ROMAJI, HIRAGANA, KATAKANA, DIFFICULTY_CUTOFF, buildPool } = await import(
+  'data:text/javascript,' + encodeURIComponent(slice + '\nexport { ROMAJI, HIRAGANA, KATAKANA, DIFFICULTY_CUTOFF, buildPool };')
 );
 
 check(ROMAJI.length === HIRAGANA.length, `romaji/hiragana aligned (${ROMAJI.length} vs ${HIRAGANA.length})`);
@@ -76,6 +76,22 @@ check(bPool.length === ROMAJI.length * 2, `both pool = ${bPool.length}`);
 check(new Set(bPool.map(p => p.key)).size === bPool.length, 'pool keys are unique (mastery tracking is per-script)');
 check(hPool.every(p => HIRAGANA.includes(p.glyph)) && kPool.every(p => KATAKANA.includes(p.glyph)),
   'each pool contains only its own script');
+
+/* ---------- 4b. difficulty cutoffs ---------- */
+check(DIFFICULTY_CUTOFF[2] === ROMAJI.length, 'difficulty 3 covers the full table');
+check(DIFFICULTY_CUTOFF[0] < DIFFICULTY_CUTOFF[1] && DIFFICULTY_CUTOFF[1] < DIFFICULTY_CUTOFF[2],
+  `difficulty cutoffs strictly increase (${DIFFICULTY_CUTOFF.join(' < ')})`);
+const d1 = buildPool('hiragana', 1), d2 = buildPool('hiragana', 2), d3 = buildPool('hiragana', 3);
+check(d1.length === DIFFICULTY_CUTOFF[0] && d2.length === DIFFICULTY_CUTOFF[1] && d3.length === DIFFICULTY_CUTOFF[2],
+  `difficulty 1/2/3 pool sizes match cutoffs (${d1.length}/${d2.length}/${d3.length})`);
+// Digraphs (きゃ, しゃ …) are the only two-character glyphs in the tables;
+// basic and dakuten/handakuten kana are always a single character.
+check(d1.every(p => [...p.glyph].length === 1), 'difficulty 1 (basic) has no digraphs');
+const DAKUTEN = [...'がぎぐげござじずぜぞだぢづでどばびぶべぼぱぴぷぺぽ'];
+check(!d1.some(p => DAKUTEN.includes(p.glyph)), 'difficulty 1 (basic) has no dakuten/handakuten');
+check(d2.some(p => DAKUTEN.includes(p.glyph)) && d2.every(p => [...p.glyph].length === 1),
+  'difficulty 2 adds dakuten/handakuten but still no digraphs');
+check(d3.some(p => [...p.glyph].length === 2), 'difficulty 3 adds the digraphs (two-character glyphs)');
 
 /* ---------- 5. every DOM id the game touches must exist ---------- */
 const ids = new Set();

@@ -30,7 +30,8 @@
   #lives b{color:var(--mag);font-size:20px;letter-spacing:.18em}
 
   /* ---------- typed buffer ---------- */
-  #bufferWrap{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);
+  #bufferWrap{position:fixed;left:50%;bottom:calc(26px + var(--kb-h, 0px));
+    transform:translateX(-50%);
     display:flex;flex-direction:column;align-items:center;gap:8px;
     pointer-events:none;transition:opacity .2s}
   #guide{font-size:13px;letter-spacing:.3em;text-transform:uppercase;opacity:.4}
@@ -73,6 +74,21 @@
     padding:4px 10px;border-radius:6px;background:rgba(111,245,255,.08);
     border:1px solid rgba(111,245,255,.28);letter-spacing:.1em}
   .modes{display:flex;gap:12px;margin-top:6px}
+  .difficulty{display:flex;flex-direction:column;align-items:center;gap:7px;
+    margin-top:4px;width:min(380px,82vw)}
+  .diffLabel{font-size:12px;letter-spacing:.2em;text-transform:uppercase;opacity:.58}
+  .diffLabel b{color:var(--cyan);opacity:1;letter-spacing:.06em;margin-left:6px;
+    text-transform:none;font-weight:700}
+  input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:4px;
+    border-radius:2px;background:rgba(111,245,255,.22);outline:none;margin:4px 0}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;
+    width:18px;height:18px;border-radius:50%;background:var(--mag);cursor:pointer;
+    box-shadow:0 0 10px rgba(255,95,210,.6);border:2px solid var(--bg)}
+  input[type=range]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;
+    background:var(--mag);cursor:pointer;box-shadow:0 0 10px rgba(255,95,210,.6);
+    border:2px solid var(--bg)}
+  .diffTicks{display:flex;justify-content:space-between;width:100%;font-size:11px;
+    letter-spacing:.08em;text-transform:uppercase;opacity:.4}
   button{font-family:'Rajdhani',sans-serif;font-weight:700;font-size:15px;
     letter-spacing:.2em;text-transform:uppercase;cursor:pointer;
     padding:12px 26px;border-radius:10px;color:#eaf6ff;
@@ -91,6 +107,33 @@
     opacity:.55}
   .stats strong{font-size:26px;color:var(--cyan);font-weight:700}
   .hint{font-size:13px;opacity:.42;letter-spacing:.16em;text-transform:uppercase}
+
+  /* ---------- mobile on-screen keyboard ----------
+     Shown only on coarse-pointer (touch) devices, only while a run is live.
+     The canvas is shrunk to sit above it (see sizeRenderer in JS) so it never
+     overlaps the play field — no z-index fighting with enemies/bullets. */
+  #mobileKb{position:fixed;left:0;right:0;bottom:0;z-index:5;display:none;
+    flex-direction:column;align-items:center;gap:6px;
+    padding:6px 6px calc(8px + env(safe-area-inset-bottom, 0px));
+    background:linear-gradient(180deg,rgba(8,14,22,.35),rgba(5,8,14,.94) 40%);
+    backdrop-filter:blur(4px);touch-action:none}
+  #mobileKb.show{display:flex}
+  #mobileKb .kbhead{width:100%;max-width:640px;display:flex;justify-content:flex-end}
+  #mobileKb .kbrow{display:flex;gap:5px;width:100%;max-width:640px;justify-content:center}
+  #mobileKb button.kbkey{flex:1 1 0;min-width:0;padding:0;height:42px;
+    font-size:15px;font-weight:700;letter-spacing:0;
+    background:rgba(111,245,255,.08);border:1px solid rgba(111,245,255,.25);
+    border-radius:8px;color:#eaf6ff;touch-action:manipulation}
+  #mobileKb button.kbkey:active{background:rgba(111,245,255,.3);transform:translateY(1px)}
+  #mobileKb button.kbkey.bksp{flex:1.7 1 0;background:rgba(255,107,122,.1);
+    border-color:rgba(255,107,122,.35)}
+  #mobileKb button.kbkey.bksp:active{background:rgba(255,107,122,.32)}
+  #mobileKb button.kbkey.pause{flex:0 0 auto;height:26px;padding:0 14px;
+    font-size:11px;letter-spacing:.15em;
+    background:rgba(255,200,107,.1);border-color:rgba(255,200,107,.35)}
+  #mobileKb button.kbkey.pause:active{background:rgba(255,200,107,.3)}
+
+  #quitBtn{opacity:.75}
 </style>
 </head>
 <body>
@@ -132,6 +175,11 @@
     <button data-mode="katakana">Katakana</button>
     <button data-mode="both">Both</button>
   </div>
+  <div class="difficulty">
+    <div class="diffLabel">Difficulty <b id="diffName">+ Combined kana (きゃ, しゃ …)</b></div>
+    <input type="range" id="diffSlider" min="1" max="3" step="1" value="3">
+    <div class="diffTicks"><span>Basic</span><span>+ Tenten</span><span>+ Combined</span></div>
+  </div>
   <div class="keys">
     <kbd>type</kbd><kbd>Backspace</kbd><kbd>Esc pause</kbd><kbd>⇧M mute</kbd>
   </div>
@@ -156,7 +204,46 @@
 <div class="screen hidden" id="pauseScreen">
   <h1>Paused</h1>
   <button class="big" id="resumeBtn">Resume</button>
+  <button id="quitBtn">Quit to menu</button>
   <div class="hint">Esc to resume · Q to quit to menu</div>
+</div>
+
+<!-- ---------- mobile on-screen keyboard ---------- -->
+<div id="mobileKb">
+  <div class="kbhead"><button class="kbkey pause" data-k="pause">⏸ pause</button></div>
+  <div class="kbrow">
+    <button class="kbkey" data-k="q">q</button>
+    <button class="kbkey" data-k="w">w</button>
+    <button class="kbkey" data-k="e">e</button>
+    <button class="kbkey" data-k="r">r</button>
+    <button class="kbkey" data-k="t">t</button>
+    <button class="kbkey" data-k="y">y</button>
+    <button class="kbkey" data-k="u">u</button>
+    <button class="kbkey" data-k="i">i</button>
+    <button class="kbkey" data-k="o">o</button>
+    <button class="kbkey" data-k="p">p</button>
+  </div>
+  <div class="kbrow">
+    <button class="kbkey" data-k="a">a</button>
+    <button class="kbkey" data-k="s">s</button>
+    <button class="kbkey" data-k="d">d</button>
+    <button class="kbkey" data-k="f">f</button>
+    <button class="kbkey" data-k="g">g</button>
+    <button class="kbkey" data-k="h">h</button>
+    <button class="kbkey" data-k="j">j</button>
+    <button class="kbkey" data-k="k">k</button>
+    <button class="kbkey" data-k="l">l</button>
+  </div>
+  <div class="kbrow">
+    <button class="kbkey" data-k="z">z</button>
+    <button class="kbkey" data-k="x">x</button>
+    <button class="kbkey" data-k="c">c</button>
+    <button class="kbkey" data-k="v">v</button>
+    <button class="kbkey" data-k="b">b</button>
+    <button class="kbkey" data-k="n">n</button>
+    <button class="kbkey" data-k="m">m</button>
+    <button class="kbkey bksp" data-k="back">⌫</button>
+  </div>
 </div>
 
 <script type="importmap">
@@ -267,9 +354,16 @@ const KATAKANA = [
 if (ROMAJI.length !== HIRAGANA.length || ROMAJI.length !== KATAKANA.length)
   throw new Error('kana tables misaligned');
 
-function buildPool(mode){
+// The tables above are laid out in difficulty order on purpose: the 46 basic
+// kana, then the 25 dakuten/handakuten (が/ざ/だ/ば/ぱ rows), then the 33
+// digraphs (きゃ, しゃ …). A difficulty level is just a prefix cutoff.
+const DIFFICULTY_CUTOFF = [46, 71, 104];
+const DIFFICULTY_NAME = ['Basic kana', '+ Dakuten / handakuten (゛゜)', '+ Combined kana (きゃ, しゃ …)'];
+
+function buildPool(mode, difficulty = 3){
+  const cutoff = DIFFICULTY_CUTOFF[difficulty - 1];
   const out = [];
-  for (let i = 0; i < ROMAJI.length; i++){
+  for (let i = 0; i < cutoff; i++){
     if (mode === 'hiragana' || mode === 'both')
       out.push({ glyph: HIRAGANA[i], romaji: ROMAJI[i], key: 'h' + i });
     if (mode === 'katakana' || mode === 'both')
@@ -370,8 +464,12 @@ scene.fog = new THREE.FogExp2(0x05060b, 0.0032);
 // changes size with the window, only its width does.
 const VIEW_H = 100;
 let camera, viewW;
+// kbHeightPx: CSS-pixel height the on-screen mobile keyboard reserves at the
+// bottom of the window. 0 on desktop. The canvas is sized to the remainder
+// (see sizeRenderer) so the play field never sits under the keyboard.
+let kbHeightPx = 0;
 function makeCamera(){
-  const aspect = innerWidth / innerHeight;
+  const aspect = innerWidth / (innerHeight - kbHeightPx);
   viewW = VIEW_H * aspect;
   camera = new THREE.OrthographicCamera(-viewW / 2, viewW / 2, VIEW_H / 2, -VIEW_H / 2, 0.1, 500);
   camera.position.set(0, 0, 100);
@@ -606,7 +704,7 @@ function spawnBullet(from){
 
 const S = {
   running: false, over: false, paused: false,
-  mode: 'hiragana', pool: [],
+  mode: 'hiragana', pool: [], difficulty: 3,
   score: 0, wave: 1, lives: 3,
   kills: 0, typed: 0, correct: 0,
   buffer: '', target: null,
@@ -718,14 +816,11 @@ addEventListener('keydown', ev => {
     return;
   }
 
-  if (ev.key === 'Escape'){
-    if (S.running && !S.over){ S.paused = !S.paused; el('pauseScreen').classList.toggle('hidden', !S.paused); }
-    return;
-  }
+  if (ev.key === 'Escape'){ togglePause(); return; }
   if (S.paused && (ev.key === 'q' || ev.key === 'Q')){ quitToMenu(); return; }
   if (!S.running || S.paused || S.over) return;
 
-  if (ev.key === 'Backspace'){ ev.preventDefault(); S.buffer = ''; setBuffer(''); retarget(); return; }
+  if (ev.key === 'Backspace'){ ev.preventDefault(); clearBuffer(); return; }
 
   const k = ev.key.toLowerCase();
   if (!/^[a-z]$/.test(k)) return;
@@ -733,6 +828,15 @@ addEventListener('keydown', ev => {
   Audio_.init();
   handleChar(k);
 });
+
+function clearBuffer(){ S.buffer = ''; setBuffer(''); retarget(); }
+
+function togglePause(){
+  if (!S.running || S.over) return;
+  S.paused = !S.paused;
+  el('pauseScreen').classList.toggle('hidden', !S.paused);
+  syncMobileUI();
+}
 
 function handleChar(k){
   const next = S.buffer + k;
@@ -827,6 +931,7 @@ function gameOver(){
     : 'Clean run — nothing worth re-drilling.';
 
   el('overScreen').classList.remove('hidden');
+  syncMobileUI();
 }
 
 function resetGame(){
@@ -850,6 +955,7 @@ function resetGame(){
   el('titleScreen').classList.add('hidden');
   setBuffer('');
   refreshHud();
+  syncMobileUI();
 }
 
 function quitToMenu(){
@@ -864,6 +970,7 @@ function quitToMenu(){
   el('titleScreen').classList.remove('hidden');
   refreshHud();
   renderDrillHint();
+  syncMobileUI();
 }
 
 function renderDrillHint(){
@@ -1021,11 +1128,13 @@ try {
    11. LOOP + RESIZE
    ========================================================================== */
 
-addEventListener('resize', () => {
+function sizeRenderer(){
   makeCamera();
-  renderer.setSize(innerWidth, innerHeight);
-  if (composer) composer.setSize(innerWidth, innerHeight);
-});
+  const h = Math.max(1, innerHeight - kbHeightPx);
+  renderer.setSize(innerWidth, h);
+  if (composer) composer.setSize(innerWidth, h);
+}
+addEventListener('resize', sizeRenderer);
 
 const clock = new THREE.Clock();
 function tick(){
@@ -1048,25 +1157,104 @@ document.querySelectorAll('.modes button').forEach(b => {
     S.mode = b.dataset.mode;
   });
 });
+const diffSlider = el('diffSlider'), diffName = el('diffName');
+diffSlider.addEventListener('input', () => {
+  S.difficulty = parseInt(diffSlider.value, 10);
+  diffName.textContent = DIFFICULTY_NAME[S.difficulty - 1];
+});
 el('startBtn').addEventListener('click', () => {
   Audio_.init();
-  S.pool = buildPool(S.mode);
+  S.pool = buildPool(S.mode, S.difficulty);
   kanaCache.clear();
   resetGame();
 });
 el('againBtn').addEventListener('click', () => resetGame());
 el('resumeBtn').addEventListener('click', () => {
   S.paused = false; el('pauseScreen').classList.add('hidden');
+  syncMobileUI();
 });
+el('quitBtn').addEventListener('click', () => quitToMenu());
 
-S.pool = buildPool(S.mode);
+S.pool = buildPool(S.mode, S.difficulty);
 refreshHud();
 renderDrillHint();
+
+/* ==========================================================================
+   13. MOBILE / TOUCH
+   On a coarse-pointer (touch) device there's no physical keyboard, so typing
+   is replaced by an on-screen QWERTY panel docked at the bottom, and WASD
+   movement is replaced by drag-to-move on the play field. Entirely inert on
+   desktop (TOUCH is false, nothing below ever runs) — this cannot regress
+   the keyboard/mouse experience.
+   ========================================================================== */
+
+const TOUCH = matchMedia('(pointer: coarse)').matches;
+const mobileKb = el('mobileKb');
+
+function syncMobileUI(){
+  if (!TOUCH) return;
+  const show = S.running && !S.paused;
+  mobileKb.classList.toggle('show', show);
+  kbHeightPx = show ? mobileKb.getBoundingClientRect().height : 0;
+  document.documentElement.style.setProperty('--kb-h', kbHeightPx + 'px');
+  sizeRenderer();
+}
+
+if (TOUCH){
+  document.body.classList.add('touch');
+
+  // ---- on-screen keyboard: feeds the exact same handleChar/clearBuffer
+  // path a physical keydown does, so targeting/miss/combo logic is untouched.
+  mobileKb.querySelectorAll('.kbkey[data-k]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const k = btn.dataset.k;
+      if (k === 'pause'){ togglePause(); return; }
+      if (!S.running || S.paused || S.over) return;
+      Audio_.init();
+      if (k === 'back'){ clearBuffer(); return; }
+      handleChar(k);
+    });
+  });
+
+  // ---- drag-to-move: relative finger delta nudges the ship, same clamps as
+  // the WASD path in update(). Scoped to the canvas, which sizeRenderer keeps
+  // shrunk to the area above the keyboard, so the two inputs never overlap.
+  let dragId = null, lastTX = 0, lastTY = 0;
+  const canvasEl = renderer.domElement;
+
+  canvasEl.addEventListener('touchstart', ev => {
+    if (!S.running || S.paused || S.over || dragId !== null) return;
+    const t = ev.changedTouches[0];
+    dragId = t.identifier; lastTX = t.clientX; lastTY = t.clientY;
+  }, { passive: true });
+
+  canvasEl.addEventListener('touchmove', ev => {
+    if (dragId === null) return;
+    let t = null;
+    for (const ct of ev.changedTouches) if (ct.identifier === dragId) t = ct;
+    if (!t) return;
+    ev.preventDefault();
+    const dxPx = t.clientX - lastTX, dyPx = t.clientY - lastTY;
+    lastTX = t.clientX; lastTY = t.clientY;
+    const rect = canvasEl.getBoundingClientRect();
+    const wx = dxPx * (viewW / rect.width);
+    const wy = -dyPx * (VIEW_H / rect.height);
+    const halfW = viewW / 2 - 4;
+    player.position.x = THREE.MathUtils.clamp(player.position.x + wx, -halfW, halfW);
+    player.position.y = THREE.MathUtils.clamp(player.position.y + wy, -33, -8);
+  }, { passive: false });
+
+  const endDrag = ev => {
+    for (const ct of ev.changedTouches) if (ct.identifier === dragId) dragId = null;
+  };
+  canvasEl.addEventListener('touchend', endDrag, { passive: true });
+  canvasEl.addEventListener('touchcancel', endDrag, { passive: true });
+}
 
 // Console handle — handy for poking at a run from devtools, and what the
 // automated test drives. Read-only in spirit: nothing in the game reads it.
 window.KanaShmup = {
-  state: S, enemies, bullets, mastery, ROMAJI, HIRAGANA, KATAKANA,
+  state: S, enemies, bullets, mastery, ROMAJI, HIRAGANA, KATAKANA, player,
   poolCount: () => S.pool.length,
   targetRomaji: () => S.target?.entry.romaji ?? null,
   liveEnemies: () => enemies.filter(e => e.alive).map(e => e.entry),
