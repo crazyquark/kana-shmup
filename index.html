@@ -1,0 +1,1080 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Kana Shmup — かなシューティング</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&family=Rajdhani:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --cyan:#6ff5ff; --mag:#ff5fd2; --amber:#ffc86b; --bg:#05060b;
+    --ok:#7dffb0; --bad:#ff6b7a;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);overflow:hidden}
+  body{font-family:'Rajdhani',system-ui,sans-serif;color:#eaf6ff;user-select:none}
+  #app{position:fixed;inset:0}
+  canvas{display:block}
+
+  /* ---------- HUD ---------- */
+  #hud{position:fixed;inset:0;pointer-events:none;padding:14px 18px;
+       display:flex;flex-direction:column;justify-content:space-between}
+  .row{display:flex;justify-content:space-between;align-items:flex-start;gap:20px}
+  .stat{font-size:13px;letter-spacing:.22em;text-transform:uppercase;
+        opacity:.62}
+  .stat b{display:block;font-size:22px;letter-spacing:.06em;font-weight:700;
+          color:var(--cyan);opacity:1}
+  #lives{text-align:right}
+  #lives b{color:var(--mag);font-size:20px;letter-spacing:.18em}
+
+  /* ---------- typed buffer ---------- */
+  #bufferWrap{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);
+    display:flex;flex-direction:column;align-items:center;gap:8px;
+    pointer-events:none;transition:opacity .2s}
+  #guide{font-size:13px;letter-spacing:.3em;text-transform:uppercase;opacity:.4}
+  #buffer{
+    font-family:'Rajdhani',monospace;font-weight:700;font-size:40px;
+    letter-spacing:.14em;min-height:52px;padding:2px 22px;border-radius:12px;
+    background:rgba(10,20,32,.55);border:1px solid rgba(111,245,255,.18);
+    backdrop-filter:blur(6px);white-space:pre;
+  }
+  #buffer.hit{border-color:rgba(125,255,176,.55);box-shadow:0 0 26px rgba(125,255,176,.18)}
+  #buffer.miss{border-color:rgba(255,107,122,.7);box-shadow:0 0 26px rgba(255,107,122,.25);
+    animation:shake .18s}
+  @keyframes shake{25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
+  .ghost{opacity:.28}
+
+  /* ---------- combo / toast ---------- */
+  #combo{position:fixed;left:50%;top:76px;transform:translateX(-50%);
+    font-size:15px;letter-spacing:.3em;text-transform:uppercase;color:var(--amber);
+    opacity:0;transition:opacity .25s;pointer-events:none;font-weight:700}
+  #toast{position:fixed;left:50%;top:112px;transform:translateX(-50%);
+    font-size:15px;letter-spacing:.2em;color:var(--bad);opacity:0;
+    transition:opacity .3s;pointer-events:none;text-transform:uppercase}
+
+  /* ---------- screens ---------- */
+  .screen{position:fixed;inset:0;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:18px;text-align:center;
+    background:radial-gradient(ellipse at 50% 40%,rgba(20,40,70,.55),rgba(5,6,11,.94));
+    backdrop-filter:blur(3px);z-index:10}
+  .screen.hidden{display:none}
+  .screen h1{margin:0;font-size:clamp(34px,6vw,62px);letter-spacing:.14em;
+    font-weight:700;text-transform:uppercase;
+    background:linear-gradient(92deg,var(--cyan),var(--mag));
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+    filter:drop-shadow(0 0 26px rgba(111,245,255,.25))}
+  .screen .jp{font-family:'Noto Sans JP',sans-serif;font-size:26px;opacity:.5;
+    letter-spacing:.5em;margin-top:-8px}
+  .screen p{max-width:540px;line-height:1.65;opacity:.72;margin:0;font-size:16px}
+  .keys{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin-top:2px}
+  kbd{font-family:'Rajdhani',monospace;font-weight:700;font-size:13px;
+    padding:4px 10px;border-radius:6px;background:rgba(111,245,255,.08);
+    border:1px solid rgba(111,245,255,.28);letter-spacing:.1em}
+  .modes{display:flex;gap:12px;margin-top:6px}
+  button{font-family:'Rajdhani',sans-serif;font-weight:700;font-size:15px;
+    letter-spacing:.2em;text-transform:uppercase;cursor:pointer;
+    padding:12px 26px;border-radius:10px;color:#eaf6ff;
+    background:rgba(111,245,255,.07);border:1px solid rgba(111,245,255,.35);
+    transition:all .16s}
+  button:hover{background:rgba(111,245,255,.16);transform:translateY(-1px);
+    box-shadow:0 6px 24px rgba(111,245,255,.16)}
+  button.sel{background:rgba(255,95,210,.16);border-color:rgba(255,95,210,.6);
+    box-shadow:0 0 22px rgba(255,95,210,.2)}
+  button.big{padding:15px 44px;font-size:17px}
+  .stats{display:grid;grid-template-columns:repeat(3,minmax(96px,1fr));gap:16px;
+    margin-top:6px;width:min(560px,88vw)}
+  .stats div{background:rgba(111,245,255,.05);border:1px solid rgba(111,245,255,.14);
+    border-radius:12px;padding:12px 6px}
+  .stats span{display:block;font-size:12px;letter-spacing:.22em;text-transform:uppercase;
+    opacity:.55}
+  .stats strong{font-size:26px;color:var(--cyan);font-weight:700}
+  .hint{font-size:13px;opacity:.42;letter-spacing:.16em;text-transform:uppercase}
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<div id="hud">
+  <div class="row">
+    <div>
+      <div class="stat">Score<b id="score">0</b></div>
+    </div>
+    <div class="stat" style="text-align:center">
+      Wave<b id="wave" style="color:var(--amber)">1</b>
+    </div>
+    <div class="stat" id="lives">Lives<b id="livesVal">♦ ♦ ♦</b></div>
+  </div>
+  <div class="row">
+    <div class="stat">Accuracy<b id="acc" style="font-size:18px">—</b></div>
+    <div class="stat" style="text-align:right">Script<b id="scriptName" style="font-size:18px">—</b></div>
+  </div>
+</div>
+
+<div id="combo"></div>
+<div id="toast"></div>
+
+<div id="bufferWrap">
+  <div id="guide">type the romaji</div>
+  <div id="buffer"></div>
+</div>
+
+<!-- ---------- title ---------- -->
+<div class="screen" id="titleScreen">
+  <h1>Kana Shmup</h1>
+  <div class="jp">かな シューティング</div>
+  <p>Each drifting ship carries a kana. Type its romaji to fire — the exact
+     characters of the closest matching target, in order. Let one reach the
+     bottom and you lose a life.</p>
+  <div class="modes">
+    <button data-mode="hiragana" class="sel">Hiragana</button>
+    <button data-mode="katakana">Katakana</button>
+    <button data-mode="both">Both</button>
+  </div>
+  <div class="keys">
+    <kbd>type</kbd><kbd>Backspace</kbd><kbd>Esc pause</kbd><kbd>⇧M mute</kbd>
+  </div>
+  <button class="big" id="startBtn">Launch</button>
+  <div class="hint" id="drillHint"></div>
+</div>
+
+<!-- ---------- game over ---------- -->
+<div class="screen hidden" id="overScreen">
+  <h1>Game Over</h1>
+  <div class="stats">
+    <div><span>Score</span><strong id="oScore">0</strong></div>
+    <div><span>Destroyed</span><strong id="oKills">0</strong></div>
+    <div><span>Accuracy</span><strong id="oAcc">0%</strong></div>
+  </div>
+  <p id="oDetail"></p>
+  <button class="big" id="againBtn">Again</button>
+  <div class="hint">Backspace clears · Esc returns to menu</div>
+</div>
+
+<!-- ---------- pause ---------- -->
+<div class="screen hidden" id="pauseScreen">
+  <h1>Paused</h1>
+  <button class="big" id="resumeBtn">Resume</button>
+  <div class="hint">Esc to resume · Q to quit to menu</div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.169.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.169.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+
+/* ==========================================================================
+   1. KANA DATA
+   Romaji strings are aligned by index with the hiragana and katakana glyph
+   arrays. Hepburn-ish romanisation ("shi", "chi", "tsu", "fu", "ji").
+   ========================================================================== */
+
+const ROMAJI = [
+  'a','i','u','e','o',
+  'ka','ki','ku','ke','ko',
+  'sa','shi','su','se','so',
+  'ta','chi','tsu','te','to',
+  'na','ni','nu','ne','no',
+  'ha','hi','fu','he','ho',
+  'ma','mi','mu','me','mo',
+  'ya','yu','yo',
+  'ra','ri','ru','re','ro',
+  'wa','wo','n',
+  'ga','gi','gu','ge','go',
+  'za','ji','zu','ze','zo',
+  'da','ji','zu','de','do',
+  'ba','bi','bu','be','bo',
+  'pa','pi','pu','pe','po',
+  'kya','kyu','kyo',
+  'sha','shu','sho',
+  'cha','chu','cho',
+  'nya','nyu','nyo',
+  'hya','hyu','hyo',
+  'mya','myu','myo',
+  'rya','ryu','ryo',
+  'gya','gyu','gyo',
+  'ja','ju','jo',
+  'bya','byu','byo',
+  'pya','pyu','pyo',
+];
+
+const HIRAGANA = [
+  'あ','い','う','え','お',
+  'か','き','く','け','こ',
+  'さ','し','す','せ','そ',
+  'た','ち','つ','て','と',
+  'な','に','ぬ','ね','の',
+  'は','ひ','ふ','へ','ほ',
+  'ま','み','む','め','も',
+  'や','ゆ','よ',
+  'ら','り','る','れ','ろ',
+  'わ','を','ん',
+  'が','ぎ','ぐ','げ','ご',
+  'ざ','じ','ず','ぜ','ぞ',
+  'だ','ぢ','づ','で','ど',
+  'ば','び','ぶ','べ','ぼ',
+  'ぱ','ぴ','ぷ','ぺ','ぽ',
+  'きゃ','きゅ','きょ',
+  'しゃ','しゅ','しょ',
+  'ちゃ','ちゅ','ちょ',
+  'にゃ','にゅ','にょ',
+  'ひゃ','ひゅ','ひょ',
+  'みゃ','みゅ','みょ',
+  'りゃ','りゅ','りょ',
+  'ぎゃ','ぎゅ','ぎょ',
+  'じゃ','じゅ','じょ',
+  'びゃ','びゅ','びょ',
+  'ぴゃ','ぴゅ','ぴょ',
+];
+
+const KATAKANA = [
+  'ア','イ','ウ','エ','オ',
+  'カ','キ','ク','ケ','コ',
+  'サ','シ','ス','セ','ソ',
+  'タ','チ','ツ','テ','ト',
+  'ナ','ニ','ヌ','ネ','ノ',
+  'ハ','ヒ','フ','ヘ','ホ',
+  'マ','ミ','ム','メ','モ',
+  'ヤ','ユ','ヨ',
+  'ラ','リ','ル','レ','ロ',
+  'ワ','ヲ','ン',
+  'ガ','ギ','グ','ゲ','ゴ',
+  'ザ','ジ','ズ','ゼ','ゾ',
+  'ダ','ヂ','ヅ','デ','ド',
+  'バ','ビ','ブ','ベ','ボ',
+  'パ','ピ','プ','ペ','ポ',
+  'キャ','キュ','キョ',
+  'シャ','シュ','ショ',
+  'チャ','チュ','チョ',
+  'ニャ','ニュ','ニョ',
+  'ヒャ','ヒュ','ヒョ',
+  'ミャ','ミュ','ミョ',
+  'リャ','リュ','リョ',
+  'ギャ','ギュ','ギョ',
+  'ジャ','ジュ','ジョ',
+  'ビャ','ビュ','ビョ',
+  'ピャ','ピュ','ピョ',
+];
+
+if (ROMAJI.length !== HIRAGANA.length || ROMAJI.length !== KATAKANA.length)
+  throw new Error('kana tables misaligned');
+
+function buildPool(mode){
+  const out = [];
+  for (let i = 0; i < ROMAJI.length; i++){
+    if (mode === 'hiragana' || mode === 'both')
+      out.push({ glyph: HIRAGANA[i], romaji: ROMAJI[i], key: 'h' + i });
+    if (mode === 'katakana' || mode === 'both')
+      out.push({ glyph: KATAKANA[i], romaji: ROMAJI[i], key: 'k' + i });
+  }
+  return out;
+}
+
+/* ==========================================================================
+   2. MASTERY MEMORY  (localStorage)
+   Missed kana come back sooner: spawn weight grows with every miss and
+   decays with every correct answer, so the drill follows your weak spots.
+   ========================================================================== */
+
+const STORE_KEY = 'kana-shmup.mastery.v1';
+let mastery = {};
+try { mastery = JSON.parse(localStorage.getItem(STORE_KEY) || '{}'); } catch { mastery = {}; }
+
+const saveMastery = () => {
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(mastery)); } catch {}
+};
+const stat = key => (mastery[key] ||= { seen: 0, ok: 0, miss: 0 });
+function spawnWeight(entry){
+  const s = mastery[entry.key];
+  if (!s) return 1;
+  if (s.seen < 2) return 3;                       // teach new kana first
+  return 1 + Math.min(4, s.miss * 0.9);           // then lean on the misses
+}
+
+/* ==========================================================================
+   3. AUDIO  (tiny synth, no assets)
+   ========================================================================== */
+
+const Audio_ = {
+  ctx: null, muted: false,
+  init(){
+    if (!this.ctx){
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (AC) this.ctx = new AC();
+    }
+    if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume();
+  },
+  blip(freq = 440, dur = 0.05, type = 'square', gain = 0.045){
+    if (this.muted || !this.ctx) return;
+    const t = this.ctx.currentTime;
+    const o = this.ctx.createOscillator(), g = this.ctx.createGain();
+    o.type = type; o.frequency.setValueAtTime(freq, t);
+    g.gain.setValueAtTime(gain, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(this.ctx.destination);
+    o.start(t); o.stop(t + dur + 0.02);
+  },
+  sweep(f0, f1, dur = 0.22, type = 'sawtooth', gain = 0.07){
+    if (this.muted || !this.ctx) return;
+    const t = this.ctx.currentTime;
+    const o = this.ctx.createOscillator(), g = this.ctx.createGain();
+    o.type = type;
+    o.frequency.setValueAtTime(f0, t);
+    o.frequency.exponentialRampToValueAtTime(Math.max(40, f1), t + dur);
+    g.gain.setValueAtTime(gain, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(this.ctx.destination);
+    o.start(t); o.stop(t + dur + 0.02);
+  },
+  noise(dur = 0.2, gain = 0.09){
+    if (this.muted || !this.ctx) return;
+    const n = Math.floor(this.ctx.sampleRate * dur);
+    const buf = this.ctx.createBuffer(1, n, this.ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n);
+    const src = this.ctx.createBufferSource(), g = this.ctx.createGain();
+    src.buffer = buf; g.gain.value = gain;
+    src.connect(g); g.connect(this.ctx.destination);
+    src.start();
+  },
+  type(){ this.blip(720, 0.035, 'square', 0.035); },
+  kill(pitch = 1){ this.sweep(880 * pitch, 180, 0.24); },
+  wrong(){ this.blip(140, 0.09, 'sawtooth', 0.05); },
+  hurt(){ this.noise(0.3, 0.1); this.sweep(220, 60, 0.35, 'triangle', 0.06); },
+};
+
+/* ==========================================================================
+   4. SCENE SETUP
+   ========================================================================== */
+
+const app = document.getElementById('app');
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+app.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x05060b, 0.0032);
+
+// Orthographic, height fixed at VIEW_H world units — the play field never
+// changes size with the window, only its width does.
+const VIEW_H = 100;
+let camera, viewW;
+function makeCamera(){
+  const aspect = innerWidth / innerHeight;
+  viewW = VIEW_H * aspect;
+  camera = new THREE.OrthographicCamera(-viewW / 2, viewW / 2, VIEW_H / 2, -VIEW_H / 2, 0.1, 500);
+  camera.position.set(0, 0, 100);
+  camera.lookAt(0, 0, 0);
+}
+makeCamera();
+
+/* ---------- glow sprite (shared) ---------- */
+function radialTexture(inner = 'rgba(255,255,255,1)', outer = 'rgba(255,255,255,0)'){
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const g = c.getContext('2d');
+  const grd = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  grd.addColorStop(0, inner); grd.addColorStop(1, outer);
+  g.fillStyle = grd; g.fillRect(0, 0, 128, 128);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+const GLOW_TEX = radialTexture('rgba(255,255,255,0.95)', 'rgba(255,255,255,0)');
+
+/* ---------- starfield ---------- */
+const starGeo = new THREE.BufferGeometry();
+{
+  const N = 420, pos = new Float32Array(N * 3);
+  for (let i = 0; i < N; i++){
+    pos[i * 3]     = (Math.random() - 0.5) * 340;
+    pos[i * 3 + 1] = (Math.random() - 0.5) * 240;
+    pos[i * 3 + 2] = -60 - Math.random() * 140;
+  }
+  starGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+}
+const stars = new THREE.Points(starGeo, new THREE.PointsMaterial({
+  color: 0x9fd8ff, size: 0.9, sizeAttenuation: true,
+  transparent: true, opacity: 0.65, depthWrite: false,
+  blending: THREE.AdditiveBlending, map: GLOW_TEX,
+}));
+scene.add(stars);
+
+/* ---------- kana sprite ---------- */
+const kanaCache = new Map();
+function kanaTexture(glyph){
+  if (kanaCache.has(glyph)) return kanaCache.get(glyph);
+  const S = 256;
+  const c = document.createElement('canvas'); c.width = c.height = S;
+  const g = c.getContext('2d');
+  const two = [...glyph].length > 1;
+  // Two-character kana must fit inside the texture with margin: at 132px a pair
+  // is ~264px wide on a 256px canvas, so it overflowed (and was clipped) at the
+  // edges. 112px keeps a digraph inside the ring with room to spare.
+  g.font = `700 ${two ? 112 : 176}px 'Noto Sans JP', 'Hiragino Sans', 'Yu Gothic', Meiryo, sans-serif`;
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  // Deliberately restrained: the texture's own glow, the halo sprite behind the
+  // plane AND the bloom pass all add up, and stacking them saturated the glyph
+  // into an unreadable white blob. Keep only enough here to soften the edge.
+  g.shadowColor = 'rgba(140,230,255,0.45)';
+  g.shadowBlur = 12;
+  g.fillStyle = '#ffffff';
+  g.fillText(glyph, S / 2, S / 2 + 6);
+  g.shadowBlur = 0;
+  g.fillText(glyph, S / 2, S / 2 + 6);   // crisp core, drawn after the glow
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  kanaCache.set(glyph, t);
+  return t;
+}
+
+/* ---------- player ---------- */
+const player = new THREE.Group();
+{
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([
+     0, 3.2, 0,  -2.6, -2.2, 0,   2.6, -2.2, 0,
+  ]), 3));
+  const body = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0x8bf7ff }));
+  player.add(body);
+
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(3.6, 4.1, 40),
+    new THREE.MeshBasicMaterial({ color: 0x2fb7d6, transparent: true, opacity: 0.5,
+      side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false })
+  );
+  player.add(ring);
+  player.userData.ring = ring;
+
+  const eng = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: GLOW_TEX, color: 0x36d6ff, transparent: true, opacity: 0.75,
+    blending: THREE.AdditiveBlending, depthWrite: false,
+  }));
+  eng.scale.set(7, 7, 1); eng.position.set(0, -3, 0);
+  player.add(eng);
+}
+player.position.set(0, -30, 0);
+scene.add(player);
+
+/* ==========================================================================
+   5. EFFECTS  (bursts + beams, pooled in plain arrays)
+   ========================================================================== */
+
+const bursts = [];
+function spawnBurst(x, y, color = 0x9ff6ff, count = 22){
+  const geo = new THREE.BufferGeometry();
+  const pos = new Float32Array(count * 3);
+  const vel = [];
+  for (let i = 0; i < count; i++){
+    pos[i * 3] = x; pos[i * 3 + 1] = y; pos[i * 3 + 2] = 1;
+    const a = Math.random() * Math.PI * 2, s = 8 + Math.random() * 34;
+    vel.push(Math.cos(a) * s, Math.sin(a) * s);
+  }
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const pts = new THREE.Points(geo, new THREE.PointsMaterial({
+    color, size: 2.6, sizeAttenuation: true, transparent: true, opacity: 1,
+    blending: THREE.AdditiveBlending, depthWrite: false, map: GLOW_TEX,
+  }));
+  scene.add(pts);
+  bursts.push({ pts, vel, life: 0, ttl: 0.55 });
+}
+
+const beams = [];
+function spawnBeam(from, to, color = 0x8bf7ff){
+  const geo = new THREE.BufferGeometry().setFromPoints([from.clone(), to.clone()]);
+  const line = new THREE.Line(geo, new THREE.LineBasicMaterial({
+    color, transparent: true, opacity: 0.95,
+    blending: THREE.AdditiveBlending, depthWrite: false,
+  }));
+  scene.add(line);
+  beams.push({ line, life: 0, ttl: 0.18 });
+}
+
+function updateEffects(dt){
+  for (let i = bursts.length - 1; i >= 0; i--){
+    const b = bursts[i];
+    b.life += dt;
+    const p = b.pts.geometry.attributes.position.array;
+    for (let j = 0; j < b.vel.length / 2; j++){
+      p[j * 3]     += b.vel[j * 2] * dt;
+      p[j * 3 + 1] += b.vel[j * 2 + 1] * dt;
+      b.vel[j * 2]     *= 0.94;
+      b.vel[j * 2 + 1] *= 0.94;
+    }
+    b.pts.geometry.attributes.position.needsUpdate = true;
+    const k = 1 - b.life / b.ttl;
+    b.pts.material.opacity = Math.max(0, k);
+    if (b.life >= b.ttl){
+      scene.remove(b.pts);
+      b.pts.geometry.dispose(); b.pts.material.dispose();
+      bursts.splice(i, 1);
+    }
+  }
+  for (let i = beams.length - 1; i >= 0; i--){
+    const b = beams[i];
+    b.life += dt;
+    b.line.material.opacity = Math.max(0, 1 - b.life / b.ttl) * 0.95;
+    if (b.life >= b.ttl){
+      scene.remove(b.line);
+      b.line.geometry.dispose(); b.line.material.dispose();
+      beams.splice(i, 1);
+    }
+  }
+}
+
+/* ==========================================================================
+   6. ENEMIES
+   ========================================================================== */
+
+const enemies = [];
+function spawnEnemy(entry, speed){
+  const g = new THREE.Group();
+  const plane = new THREE.Mesh(
+    new THREE.PlaneGeometry(9.5, 9.5),
+    new THREE.MeshBasicMaterial({ map: kanaTexture(entry.glyph), transparent: true,
+      depthWrite: false })
+  );
+  plane.position.z = 1;
+  g.add(plane);
+
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(3.6, 4.3, 40),
+    new THREE.MeshBasicMaterial({ color: 0xff5fd2, transparent: true, opacity: 0.7,
+      side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false })
+  );
+  g.add(ring);
+
+  const halo = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: GLOW_TEX, color: 0xff5fd2, transparent: true, opacity: 0.13,
+    blending: THREE.AdditiveBlending, depthWrite: false,
+  }));
+  halo.scale.set(13, 13, 1); halo.position.z = -1;
+  g.add(halo);
+
+  const x = (Math.random() - 0.5) * (viewW - 34);
+  g.position.set(x, VIEW_H / 2 + 12, 0);
+  scene.add(g);
+
+  enemies.push({
+    g, plane, ring, halo, entry,
+    x0: x, y: g.position.y,
+    speed, drift: 0.5 + Math.random() * 1.1,
+    phase: Math.random() * Math.PI * 2,
+    age: 0, fireIn: 2.2 + Math.random() * 2.4,
+    alive: true, dying: 0,
+  });
+}
+
+function killEnemy(e, dist){
+  e.alive = false;          // the update loop reaps it on the next frame
+  scene.remove(e.g);
+  spawnBurst(e.g.position.x, e.g.position.y, 0x9ff6ff, 26);
+  spawnBeam(player.position.clone().setZ(2), e.g.position.clone(), 0x8bf7ff);
+}
+
+/* ---------- enemy bullets ---------- */
+const bullets = [];
+function spawnBullet(from){
+  const m = new THREE.Mesh(
+    new THREE.PlaneGeometry(2.2, 2.2),
+    new THREE.MeshBasicMaterial({ map: GLOW_TEX, color: 0xff5fd2, transparent: true,
+      blending: THREE.AdditiveBlending, depthWrite: false })
+  );
+  m.position.copy(from); m.position.z = 0;
+  scene.add(m);
+  const dx = player.position.x - from.x;
+  const dy = player.position.y - from.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const sp = 22;
+  bullets.push({ m, vx: (dx / len) * sp, vy: (dy / len) * sp });
+}
+
+/* ==========================================================================
+   7. GAME STATE
+   ========================================================================== */
+
+const S = {
+  running: false, over: false, paused: false,
+  mode: 'hiragana', pool: [],
+  score: 0, wave: 1, lives: 3,
+  kills: 0, typed: 0, correct: 0,
+  buffer: '', target: null,
+  spawnIn: 0, spawnEvery: 1.5, speed: 5.5, maxOnScreen: 3,
+  elapsed: 0, combo: 0, bestCombo: 0, invuln: 0,
+  missedSetup: new Set(),
+};
+
+const el = id => document.getElementById(id);
+const ui = {
+  score: el('score'), wave: el('wave'), lives: el('livesVal'), acc: el('acc'),
+  scriptName: el('scriptName'), buffer: el('buffer'), combo: el('combo'),
+  toast: el('toast'), guide: el('guide'),
+};
+
+function accuracy(){
+  return S.typed ? Math.round((S.correct / S.typed) * 100) : 0;
+}
+function refreshHud(){
+  ui.score.textContent = S.score;
+  ui.wave.textContent = S.wave;
+  ui.lives.textContent = S.lives > 0 ? '♦ '.repeat(S.lives).trim() : '—';
+  ui.acc.textContent = S.typed ? accuracy() + '%' : '—';
+  ui.scriptName.textContent = S.mode === 'both' ? 'both' : S.mode === 'hiragana' ? 'ひらがな' : 'カタカナ';
+}
+let missTimeout = 0;
+function setBuffer(text, cls){
+  ui.buffer.className = cls || '';
+  renderBuffer();
+  // The red "miss" state is feedback for a keystroke, not a permanent state —
+  // without this the empty box sat there glowing red until the next keypress.
+  if (cls === 'miss'){
+    clearTimeout(missTimeout);
+    missTimeout = setTimeout(() => { if (!S.buffer) ui.buffer.className = ''; }, 320);
+  }
+}
+function renderBuffer(){
+  const buf = S.buffer;
+  // Only the keystrokes you have actually made are shown. The remainder of the
+  // target's romaji is deliberately NEVER displayed — revealing it after the
+  // first correct key would hand over the answer for 'tsu', 'kya' and friends.
+  const e = S.target?.entry;
+  if (e && buf.length){
+    const matched = e.romaji.slice(0, buf.length);
+    const rest = e.romaji.slice(buf.length);
+    ui.buffer.innerHTML =
+      `<span style="color:var(--ok)">${escapeHtml(matched)}</span>` +
+      `<span class="ghost">${escapeHtml('·'.repeat(rest.length))}</span>`;
+    return;
+  }
+  ui.buffer.innerHTML = buf ? escapeHtml(buf) : '';
+}
+function escapeHtml(s){ return s.replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
+
+let comboTimeout = 0, toastTimeout = 0;
+function flashToast(msg){
+  ui.toast.textContent = msg;
+  ui.toast.style.opacity = 1;
+  clearTimeout(toastTimeout);
+  toastTimeout = setTimeout(() => { ui.toast.style.opacity = 0; }, 900);
+}
+function flashCombo(){
+  if (S.combo < 3) return;
+  ui.combo.textContent = `${S.combo} streak`;
+  ui.combo.style.opacity = 1;
+  clearTimeout(comboTimeout);
+  comboTimeout = setTimeout(() => { ui.combo.style.opacity = 0; }, 1100);
+}
+
+/* ---------- targeting ----------
+   The target is the LOWEST enemy whose romaji starts with what you've typed.
+   Lowest = closest to the player = the most urgent one. */
+function retarget(){
+  S.target = null;
+  if (!S.buffer) return;
+  const cands = enemies
+    .filter(e => e.alive && e.entry.romaji.startsWith(S.buffer))
+    .sort((a, b) => a.g.position.y - b.g.position.y);
+  S.target = cands[0] || null;
+}
+
+function pickEntry(){
+  const pool = S.pool;
+  let total = 0;
+  const weights = pool.map(p => {
+    const w = spawnWeight(p); total += w; return w;
+  });
+  let r = Math.random() * total;
+  for (let i = 0; i < pool.length; i++){
+    r -= weights[i];
+    if (r <= 0) return pool[i];
+  }
+  return pool[pool.length - 1];
+}
+
+/* ==========================================================================
+   8. INPUT
+   ========================================================================== */
+
+addEventListener('keydown', ev => {
+  if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
+
+  // Mute is Shift+M, and only outside a run. It CANNOT be a plain 'm': that key
+  // belongs to the player, and swallowing it makes ma/mi/mu/me/mo/mya/myu/myo
+  // impossible to ever answer correctly.
+  if (ev.key === 'M' && !S.running){
+    Audio_.muted = !Audio_.muted;
+    flashToast(Audio_.muted ? 'sound off' : 'sound on');
+    return;
+  }
+
+  if (ev.key === 'Escape'){
+    if (S.running && !S.over){ S.paused = !S.paused; el('pauseScreen').classList.toggle('hidden', !S.paused); }
+    return;
+  }
+  if (S.paused && (ev.key === 'q' || ev.key === 'Q')){ quitToMenu(); return; }
+  if (!S.running || S.paused || S.over) return;
+
+  if (ev.key === 'Backspace'){ ev.preventDefault(); S.buffer = ''; setBuffer(''); retarget(); return; }
+
+  const k = ev.key.toLowerCase();
+  if (!/^[a-z]$/.test(k)) return;
+
+  Audio_.init();
+  handleChar(k);
+});
+
+function handleChar(k){
+  const next = S.buffer + k;
+
+  // Can any live enemy take this prefix?
+  const viable = enemies.filter(e => e.alive && e.entry.romaji.startsWith(next));
+  if (viable.length === 0){
+    // Wrong key: count it, shake, drop the buffer so the player can restart cleanly.
+    S.typed++; S.combo = 0;
+    if (S.buffer) {           // mid-word miss
+      const t = S.target;
+      if (t) stat(t.entry.key).miss++;
+      Audio_.wrong();
+      setBuffer(S.buffer, 'miss');
+    } else {                  // first key, nothing remotely matched
+      Audio_.wrong();
+      setBuffer('', 'miss');
+    }
+    S.buffer = '';
+    setTimeout(() => retarget(), 0);
+    retarget();
+    renderBuffer();
+    refreshHud();
+    return;
+  }
+
+  S.buffer = next;
+  retarget();
+  setBuffer(S.buffer, 'hit');
+  Audio_.type();
+
+  // Exact completion → fire.
+  const exact = enemies.filter(e => e.alive && e.entry.romaji === S.buffer);
+  if (exact.length){
+    const victim = exact.sort((a, b) => a.g.position.y - b.g.position.y)[0];
+    S.typed++; S.correct++;
+    S.kills++; S.combo++; S.bestCombo = Math.max(S.bestCombo, S.combo);
+    const s = stat(victim.entry.key); s.seen++; s.ok++;
+    saveMastery();
+
+    // score: base + proximity bonus + streak, longer romaji worth more
+    const prox = Math.max(0, 1 - (victim.g.position.y + VIEW_H / 2) / VIEW_H);
+    S.score += Math.round((60 + victim.entry.romaji.length * 22) * (1 + prox * 0.6) * (1 + Math.min(S.combo, 10) * 0.05));
+
+    killEnemy(victim);
+    Audio_.kill(0.8 + Math.min(S.combo, 8) * 0.06);
+    S.buffer = '';
+    setBuffer('');
+    retarget();
+    flashCombo();
+    refreshHud();
+  }
+}
+
+/* ==========================================================================
+   9. WAVES / DAMAGE / LOOP
+   ========================================================================== */
+
+// Escape line sits just above the bottom edge, so a ship is counted as missed
+// while you can still SEE it at the edge. At -58 (below the frustum) the ship
+// vanished off-screen and the life was lost a moment later, with no visible cue.
+function enemyReachedPlayer(e){ return e.g.position.y <= -VIEW_H / 2 + 1; }
+
+function loseLife(reason){
+  S.lives--;
+  S.combo = 0;
+  S.invuln = 1.6;
+  Audio_.hurt();
+  refreshHud();
+  if (S.lives <= 0) gameOver();
+}
+
+function gameOver(){
+  S.over = true; S.running = false;
+  el('oScore').textContent = S.score;
+  el('oKills').textContent = S.kills;
+  el('oAcc').textContent = accuracy() + '%';
+
+  // Point at the weak spots — the whole reason the drill exists.
+  const weak = Object.entries(mastery)
+    .filter(([, v]) => v.miss > 0 && v.seen > 0)
+    .map(([k, v]) => {
+      const idx = parseInt(k.slice(1), 10);
+      const glyph = k[0] === 'h' ? HIRAGANA[idx] : KATAKANA[idx];
+      return { glyph, romaji: ROMAJI[idx], ratio: v.miss / (v.seen + v.miss), miss: v.miss };
+    })
+    .sort((a, b) => (b.ratio * b.miss) - (a.ratio * a.miss))
+    .slice(0, 6);
+
+  el('oDetail').textContent = weak.length
+    ? 'Work on: ' + weak.map(w => `${w.glyph} (${w.romaji})`).join('  ·  ')
+    : 'Clean run — nothing worth re-drilling.';
+
+  el('overScreen').classList.remove('hidden');
+}
+
+function resetGame(){
+  for (const e of enemies) scene.remove(e.g);
+  enemies.length = 0;
+  for (const b of bullets) scene.remove(b.m);
+  bullets.length = 0;
+
+  S.running = true; S.over = false; S.paused = false;
+  S.score = 0; S.wave = 1; S.lives = 3;
+  S.kills = 0; S.typed = 0; S.correct = 0;
+  S.buffer = ''; S.target = null;
+  S.spawnIn = 0.7; S.spawnEvery = 1.5; S.speed = 5.5; S.maxOnScreen = 3;
+  S.elapsed = 0; S.combo = 0; S.bestCombo = 0; S.invuln = 0;
+
+  player.position.set(0, -38, 0);
+  player.visible = true;
+
+  el('overScreen').classList.add('hidden');
+  el('pauseScreen').classList.add('hidden');
+  el('titleScreen').classList.add('hidden');
+  setBuffer('');
+  refreshHud();
+}
+
+function quitToMenu(){
+  S.running = false; S.paused = false; S.over = false;
+  for (const e of enemies) scene.remove(e.g);
+  enemies.length = 0;
+  for (const b of bullets) scene.remove(b.m);
+  bullets.length = 0;
+  S.buffer = ''; setBuffer('');
+  el('pauseScreen').classList.add('hidden');
+  el('overScreen').classList.add('hidden');
+  el('titleScreen').classList.remove('hidden');
+  refreshHud();
+  renderDrillHint();
+}
+
+function renderDrillHint(){
+  const entries = Object.entries(mastery).filter(([, v]) => v.seen > 0);
+  if (!entries.length){ el('drillHint').textContent = 'first run — every kana is fair game'; return; }
+  const known = entries.length;
+  const weak = entries.filter(([, v]) => v.miss > 0).length;
+  el('drillHint').textContent = `${known} kana practised · ${weak} still shaky`;
+}
+
+function update(dt){
+  S.elapsed += dt;
+
+  // ---- stars ----
+  const sp = starGeo.attributes.position.array;
+  for (let i = 1; i < sp.length; i += 3){
+    sp[i] -= (8 + (i % 7)) * dt;
+    if (sp[i] < -120) sp[i] = 120;
+  }
+  starGeo.attributes.position.needsUpdate = true;
+
+  // ---- player ----
+  const speedP = 62;
+  let dx = 0, dy = 0;
+  if (keys.has('arrowleft') || keys.has('a')) dx -= 1;
+  if (keys.has('arrowright') || keys.has('d')) dx += 1;
+  if (keys.has('arrowup') || keys.has('w')) dy += 1;
+  if (keys.has('arrowdown') || keys.has('s')) dy -= 1;
+  const len = Math.hypot(dx, dy) || 1;
+  player.position.x += (dx / len) * speedP * dt;
+  player.position.y += (dy / len) * speedP * dt;
+  const halfW = viewW / 2 - 4;
+  player.position.x = THREE.MathUtils.clamp(player.position.x, -halfW, halfW);
+  // Floor is -33, not the screen edge: the typed-romaji box occupies the bottom
+  // ~12% of the view, and flying the ship down into it looks like a collision.
+  player.position.y = THREE.MathUtils.clamp(player.position.y, -33, -8);
+  player.userData.ring.rotation.z += dt * 0.7;
+
+  if (S.invuln > 0){
+    S.invuln -= dt;
+    player.visible = Math.floor(S.invuln * 12) % 2 === 0;
+    if (S.invuln <= 0) player.visible = true;
+  }
+
+  // ---- wave curve ----
+  const w = 1 + Math.floor(S.elapsed / 26);
+  if (w !== S.wave){
+    S.wave = w;
+    S.spawnEvery = Math.max(0.62, 1.5 - (w - 1) * 0.11);
+    S.speed = 5.5 + (w - 1) * 1.15;
+    S.maxOnScreen = Math.min(7, 3 + Math.floor(w / 2));
+    refreshHud();
+  }
+
+  // ---- spawning ----
+  S.spawnIn -= dt;
+  const live = enemies.filter(e => e.alive).length;
+  if (S.spawnIn <= 0 && live < S.maxOnScreen){
+    spawnEnemy(pickEntry(), S.speed * (0.85 + Math.random() * 0.3));
+    S.spawnIn = S.spawnEvery;
+  }
+
+  // ---- enemies ----
+  const bottom = -VIEW_H / 2;
+  for (let i = enemies.length - 1; i >= 0; i--){
+    const e = enemies[i];
+    if (!e.alive){            // shot this frame — drop it, or dead hulls pile up
+      enemies.splice(i, 1);   // and get re-processed (and re-lerped) forever
+      continue;
+    }
+    e.age += dt;
+    e.g.position.y -= e.speed * dt;
+    e.g.position.x = e.x0 + Math.sin(e.age * e.drift + e.phase) * 5.5;
+    e.ring.rotation.z -= dt * 0.9;
+
+    const isTarget = S.target === e;
+    const nearMatch = S.buffer && e.alive && e.entry.romaji.startsWith(S.buffer);
+    const sc = isTarget ? 1.14 : nearMatch ? 1.07 : 1;
+    e.g.scale.lerp(new THREE.Vector3(sc, sc, 1), 1 - Math.pow(0.001, dt));
+    e.ring.material.color.setHex(isTarget ? 0x7dffb0 : nearMatch ? 0x9ff6ff : 0xff5fd2);
+    e.ring.material.opacity = isTarget ? 1 : nearMatch ? 0.85 : 0.6;
+    e.halo.material.color.setHex(isTarget ? 0x7dffb0 : 0xff5fd2);
+
+    // Escaped the field.
+    if (e.alive && enemyReachedPlayer(e)){
+      const s = stat(e.entry.key); s.seen++; s.miss++;
+      saveMastery();
+      flashToast(`${e.entry.glyph} = ${e.entry.romaji}`);
+      scene.remove(e.g);
+      enemies.splice(i, 1);
+      loseLife('escape');
+      if (!S.running) return;
+      if (S.target === e){ S.buffer = ''; setBuffer(''); retarget(); }
+      continue;
+    }
+
+    // Fire (later waves only — keeps the first minute about learning, not dodging).
+    if (e.alive && S.wave >= 3 && e.g.position.y > -VIEW_H / 2 + 24){
+      e.fireIn -= dt;
+      if (e.fireIn <= 0){ spawnBullet(e.g.position); e.fireIn = 2.6 + Math.random() * 3.2; }
+    }
+  }
+
+  // ---- bullets ----
+  const hitR = 4.2;
+  for (let i = bullets.length - 1; i >= 0; i--){
+    const b = bullets[i];
+    b.m.position.x += b.vx * dt;
+    b.m.position.y += b.vy * dt;
+    const off = b.m.position.y < -VIEW_H / 2 - 6 ||
+                Math.abs(b.m.position.x) > viewW / 2 + 6;
+    const hit = S.invuln <= 0 &&
+      Math.hypot(b.m.position.x - player.position.x, b.m.position.y - player.position.y) < hitR;
+    if (hit){
+      scene.remove(b.m); bullets.splice(i, 1);
+      S.buffer = ''; setBuffer(''); retarget();
+      loseLife('bullet');
+      if (!S.running) return;
+    } else if (off){
+      scene.remove(b.m); bullets.splice(i, 1);
+    }
+  }
+
+  updateEffects(dt);
+}
+
+/* ---------- keys held ---------- */
+const keys = new Set();
+addEventListener('keydown', e => keys.add(e.key.toLowerCase()));
+addEventListener('keyup',   e => keys.delete(e.key.toLowerCase()));
+addEventListener('blur',    () => keys.clear());
+
+/* ==========================================================================
+   10. BLOOM (optional — falls back to a plain render if the addons don't load)
+   ========================================================================== */
+
+let composer = null;
+try {
+  const { EffectComposer } = await import('three/addons/postprocessing/EffectComposer.js');
+  const { RenderPass }     = await import('three/addons/postprocessing/RenderPass.js');
+  const { UnrealBloomPass }= await import('three/addons/postprocessing/UnrealBloomPass.js');
+  const { OutputPass }     = await import('three/addons/postprocessing/OutputPass.js');
+  composer = new EffectComposer(renderer);
+  composer.addPass(new RenderPass(scene, camera));
+  // Threshold 0.5 (not 0.18) so only the bright glyph core blooms: at a low
+  // threshold the pink halo bloomed too and the whole ship washed out to white.
+  composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.5, 0.4, 0.5));
+  composer.addPass(new OutputPass());
+} catch (err){
+  console.warn('bloom unavailable, rendering without post-processing:', err);
+  composer = null;
+}
+
+/* ==========================================================================
+   11. LOOP + RESIZE
+   ========================================================================== */
+
+addEventListener('resize', () => {
+  makeCamera();
+  renderer.setSize(innerWidth, innerHeight);
+  if (composer) composer.setSize(innerWidth, innerHeight);
+});
+
+const clock = new THREE.Clock();
+function tick(){
+  requestAnimationFrame(tick);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  if (S.running && !S.paused) update(dt);
+  else { updateEffects(dt); stars.rotation.z += dt * 0.01; }
+  if (composer) composer.render(); else renderer.render(scene, camera);
+}
+tick();
+
+/* ==========================================================================
+   12. MENU WIRING
+   ========================================================================== */
+
+document.querySelectorAll('.modes button').forEach(b => {
+  b.addEventListener('click', () => {
+    document.querySelectorAll('.modes button').forEach(x => x.classList.remove('sel'));
+    b.classList.add('sel');
+    S.mode = b.dataset.mode;
+  });
+});
+el('startBtn').addEventListener('click', () => {
+  Audio_.init();
+  S.pool = buildPool(S.mode);
+  kanaCache.clear();
+  resetGame();
+});
+el('againBtn').addEventListener('click', () => resetGame());
+el('resumeBtn').addEventListener('click', () => {
+  S.paused = false; el('pauseScreen').classList.add('hidden');
+});
+
+S.pool = buildPool(S.mode);
+refreshHud();
+renderDrillHint();
+
+// Console handle — handy for poking at a run from devtools, and what the
+// automated test drives. Read-only in spirit: nothing in the game reads it.
+window.KanaShmup = {
+  state: S, enemies, bullets, mastery, ROMAJI, HIRAGANA, KATAKANA,
+  poolCount: () => S.pool.length,
+  targetRomaji: () => S.target?.entry.romaji ?? null,
+  liveEnemies: () => enemies.filter(e => e.alive).map(e => e.entry),
+  // Deterministic spawn, used by the test suite to exercise every romaji
+  // without waiting on the wave timer.
+  spawn: (entry) => { spawnEnemy(entry, 0); return enemies[enemies.length - 1]; },
+  kanaTexture,   // so the tests can measure whether a glyph fits its canvas
+};
+</script>
+</body>
+</html>
