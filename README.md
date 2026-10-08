@@ -55,6 +55,11 @@ never overlap.
 - **Targeting.** What you type matches against the *lowest* ship whose romaji
   still fits what you've typed — the most urgent one. Matching ships are
   highlighted, so you can see the lock before you finish the word.
+- **Flying pays off, but never gates.** Typing always destroys a matching ship
+  from anywhere on screen — the drill never blocks on flying skill. But kill
+  one while your ship is roughly underneath it and you score extra (a gold
+  beam instead of cyan, plus a "precision kill" callout), so movement has a
+  real reason to exist beyond dodging once bullets start in wave 3.
 - **The answer is never shown.** Once you start a word the buffer shows your
   progress and placeholders, never the remaining letters. Handing over the rest
   of the word after the first keystroke would defeat the point for `tsu`,
@@ -109,11 +114,13 @@ the difficulty cutoffs, and checks every DOM id the game reaches for actually
 exists. `test-playwright.mjs` plays the game on desktop: it types romaji,
 checks partial words don't fire, that the answer isn't leaked, that escapes
 and bullets cost lives, that pause freezes the world, that the difficulty
-slider actually changes the pool, and — most usefully — that **all 104 romaji
-are typeable**. That last one exists because it caught a real bug: `m` was
-bound to the mute toggle, which silently made ma/mi/mu/me/mo/mya/myu/myo
-impossible to answer. `test-mobile.mjs` runs the same game under touch
-emulation and drives the on-screen keyboard and drag gestures directly.
+slider actually changes the pool, that killing a ship while aligned under it
+scores meaningfully more than killing it from across the screen, and — most
+usefully — that **all 104 romaji are typeable**. That last one exists because
+it caught a real bug: `m` was bound to the mute toggle, which silently made
+ma/mi/mu/me/mo/mya/myu/myo impossible to answer. `test-mobile.mjs` runs the
+same game under touch emulation and drives the on-screen keyboard and drag
+gestures directly.
 
 ## Coverage
 

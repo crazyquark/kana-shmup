@@ -225,6 +225,38 @@ await page.click('#startBtn');
 diffPool = await page.evaluate(() => KanaShmup.state.pool);
 check(diffPool.length === 71, `difficulty 2 pool is 71 (basic + dakuten, got ${diffPool.length})`);
 
+/* ---------- positioning bonus: typing always fires, alignment just scores more ----------
+   Romaji is deliberately "kyo" (きょ), not a real table entry — it must avoid
+   w/a/s/d, which double as movement keys: typing one would nudge the ship
+   mid-word via the same keydown listener that drives flying, throwing off
+   the x-position this test is trying to hold still. */
+const killAt = async (playerX) => {
+  await boot();
+  await page.click('#startBtn');
+  await page.evaluate((px) => {
+    KanaShmup.enemies.forEach(e => { e.alive = false; });
+    KanaShmup.state.spawnIn = 1e9;
+    const e = KanaShmup.spawn({ glyph: 'きょ', romaji: 'kyo', key: 'h90' });
+    // phase=0 too: the update loop applies sin(age*drift + phase)*5.5 to x every
+    // frame regardless of drift/speed, so a random leftover phase still jitters
+    // the enemy's x by up to ±5.5 — enough to flip the alignment check.
+    e.g.position.y = 0; e.g.position.x = 0; e.x0 = 0; e.speed = 0; e.drift = 0; e.phase = 0;
+    KanaShmup.player.position.x = px;
+  }, playerX);
+  await page.keyboard.type('kyo', { delay: 30 });
+  await page.waitForTimeout(250);
+  return { score: await page.evaluate(() => KanaShmup.state.score),
+           toast: (await page.locator('#toast').innerText()).trim() };
+};
+const aligned = await killAt(0);     // directly under the target
+const far = await killAt(60);        // well outside ALIGN_RANGE, same kill otherwise
+check(aligned.score > far.score,
+  `killing while aligned scores more (${aligned.score} vs ${far.score})`);
+check(aligned.score >= Math.round(far.score * 1.25),
+  `alignment bonus is a meaningful fraction of score, not rounding noise (${aligned.score} vs ${far.score})`);
+check(aligned.toast.toLowerCase().includes('precision'), 'aligned kill shows the precision-kill callout');
+check(!far.toast.toLowerCase().includes('precision'), 'misaligned kill does not claim precision');
+
 /* ---------- every glyph must fit its sprite canvas without clipping ---------- */
 const clipped = await page.evaluate(() => {
   const bad = [];

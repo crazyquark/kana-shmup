@@ -54,6 +54,7 @@
   #toast{position:fixed;left:50%;top:112px;transform:translateX(-50%);
     font-size:15px;letter-spacing:.2em;color:var(--bad);opacity:0;
     transition:opacity .3s;pointer-events:none;text-transform:uppercase}
+  #toast.good{color:var(--ok)}
 
   /* ---------- screens ---------- */
   .screen{position:fixed;inset:0;display:flex;flex-direction:column;
@@ -674,11 +675,14 @@ function spawnEnemy(entry, speed){
   });
 }
 
-function killEnemy(e, dist){
+function killEnemy(e, align = 0){
   e.alive = false;          // the update loop reaps it on the next frame
   scene.remove(e.g);
   spawnBurst(e.g.position.x, e.g.position.y, 0x9ff6ff, 26);
-  spawnBeam(player.position.clone().setZ(2), e.g.position.clone(), 0x8bf7ff);
+  // Gold beam for a precise (well-aligned) kill, the usual cyan otherwise —
+  // a free visual tell for the positioning bonus, no HUD text required.
+  spawnBeam(player.position.clone().setZ(2), e.g.position.clone(),
+    align >= PRECISE_ALIGN ? 0xffc86b : 0x8bf7ff);
 }
 
 /* ---------- enemy bullets ---------- */
@@ -706,6 +710,14 @@ function spawnBullet(from){
 // happens to expire (up to 1.5s) — cap the wait so a replacement appears
 // promptly once the field has room.
 const RESPAWN_GAP = 0.35;
+
+// Positioning bonus: typing always works from anywhere (the drill never
+// gates on flying skill), but killing a ship while roughly underneath it
+// scores extra — a soft, additive reward for movement rather than a
+// requirement. ALIGN_RANGE is the x-distance (world units) the bonus falls
+// off over; PRECISE_ALIGN is the threshold for the "precision kill" callout.
+const ALIGN_RANGE = 11;
+const PRECISE_ALIGN = 0.6;
 
 const S = {
   running: false, over: false, paused: false,
@@ -768,8 +780,9 @@ function renderBuffer(){
 function escapeHtml(s){ return s.replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
 
 let comboTimeout = 0, toastTimeout = 0;
-function flashToast(msg){
+function flashToast(msg, cls){
   ui.toast.textContent = msg;
+  ui.toast.className = cls || '';
   ui.toast.style.opacity = 1;
   clearTimeout(toastTimeout);
   toastTimeout = setTimeout(() => { ui.toast.style.opacity = 0; }, 900);
@@ -885,17 +898,23 @@ function handleChar(k){
     const s = stat(victim.entry.key); s.seen++; s.ok++;
     saveMastery();
 
-    // score: base + proximity bonus + streak, longer romaji worth more
+    // score: base + proximity + positioning + streak, longer romaji worth more.
+    // The positioning bonus is purely additive — typing already fired
+    // regardless of where the player's ship is, this just rewards flying
+    // under the target before finishing it.
     const prox = Math.max(0, 1 - (victim.g.position.y + VIEW_H / 2) / VIEW_H);
-    S.score += Math.round((60 + victim.entry.romaji.length * 22) * (1 + prox * 0.6) * (1 + Math.min(S.combo, 10) * 0.05));
+    const align = Math.max(0, 1 - Math.abs(player.position.x - victim.g.position.x) / ALIGN_RANGE);
+    S.score += Math.round((60 + victim.entry.romaji.length * 22) *
+      (1 + prox * 0.6) * (1 + align * 0.35) * (1 + Math.min(S.combo, 10) * 0.05));
 
-    killEnemy(victim);
+    killEnemy(victim, align);
     Audio_.kill(0.8 + Math.min(S.combo, 8) * 0.06);
     S.spawnIn = Math.min(S.spawnIn, RESPAWN_GAP);
     S.buffer = '';
     setBuffer('');
     retarget();
     flashCombo();
+    if (align >= PRECISE_ALIGN) flashToast('precision kill', 'good');
     refreshHud();
   }
 }
