@@ -480,6 +480,17 @@ app.appendChild(renderer.domElement);
 const scene = new THREE.Scene();
 scene.fog = new THREE.FogExp2(0x05060b, 0.0032);
 
+// Everything else in the scene is unlit (MeshBasicMaterial/Sprite), so these
+// only matter to the enemy bubble's lit sphere below — they give it an actual
+// shaded highlight/terminator instead of a flat silhouette.
+scene.add(new THREE.AmbientLight(0x2a3660, 1.1));
+const bubbleKey = new THREE.DirectionalLight(0xbfe9ff, 1.8);
+bubbleKey.position.set(-20, 30, 60);
+scene.add(bubbleKey);
+const bubbleRim = new THREE.DirectionalLight(0xff6fe0, 0.8);
+bubbleRim.position.set(25, -15, 40);
+scene.add(bubbleRim);
+
 // Orthographic, height fixed at VIEW_H world units — the play field never
 // changes size with the window, only its width does.
 const VIEW_H = 100;
@@ -511,21 +522,49 @@ function radialTexture(inner = 'rgba(255,255,255,1)', outer = 'rgba(255,255,255,
 const GLOW_TEX = radialTexture('rgba(255,255,255,0.95)', 'rgba(255,255,255,0)');
 
 /* ---------- starfield ---------- */
+// A custom shader instead of PointsMaterial so each star can twinkle on its
+// own phase (aPhase/aSize, driven by uTime) rather than the whole field
+// fading in lockstep.
 const starGeo = new THREE.BufferGeometry();
 {
-  const N = 420, pos = new Float32Array(N * 3);
+  const N = 900, pos = new Float32Array(N * 3), phase = new Float32Array(N), size = new Float32Array(N);
   for (let i = 0; i < N; i++){
     pos[i * 3]     = (Math.random() - 0.5) * 340;
     pos[i * 3 + 1] = (Math.random() - 0.5) * 240;
     pos[i * 3 + 2] = -60 - Math.random() * 140;
+    phase[i] = Math.random() * Math.PI * 2;
+    size[i] = 0.55 + Math.random() * Math.random() * 2.2; // squared bias: mostly small, a few standout bright ones
   }
   starGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  starGeo.setAttribute('aPhase', new THREE.BufferAttribute(phase, 1));
+  starGeo.setAttribute('aSize', new THREE.BufferAttribute(size, 1));
 }
-const stars = new THREE.Points(starGeo, new THREE.PointsMaterial({
-  color: 0x9fd8ff, size: 0.9, sizeAttenuation: true,
-  transparent: true, opacity: 0.65, depthWrite: false,
-  blending: THREE.AdditiveBlending, map: GLOW_TEX,
-}));
+const starMat = new THREE.ShaderMaterial({
+  uniforms: { uTime: { value: 0 }, map: { value: GLOW_TEX }, color: { value: new THREE.Color(0x9fd8ff) } },
+  vertexShader: `
+    attribute float aPhase;
+    attribute float aSize;
+    uniform float uTime;
+    varying float vTwinkle;
+    void main(){
+      vTwinkle = 0.45 + 0.55 * sin(uTime * 1.4 + aPhase);
+      vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+      gl_PointSize = aSize * (260.0 / -mvPosition.z);
+      gl_Position = projectionMatrix * mvPosition;
+    }
+  `,
+  fragmentShader: `
+    uniform sampler2D map;
+    uniform vec3 color;
+    varying float vTwinkle;
+    void main(){
+      vec4 tex = texture2D(map, gl_PointCoord);
+      gl_FragColor = vec4(color, tex.a * vTwinkle * 0.75);
+    }
+  `,
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+});
+const stars = new THREE.Points(starGeo, starMat);
 scene.add(stars);
 
 /* ---------- kana sprite ---------- */
@@ -658,6 +697,20 @@ function updateEffects(dt){
 const enemies = [];
 function spawnEnemy(entry, speed){
   const g = new THREE.Group();
+
+  // The bubble's actual body: a real lit sphere (see the lights above), sunk
+  // behind the ring/glyph so its near cap sits just short of them — in the
+  // orthographic camera its silhouette is still a full circle regardless of
+  // that depth, so nothing about its on-screen size changes.
+  const bubble = new THREE.Mesh(
+    new THREE.SphereGeometry(4, 28, 20),
+    new THREE.MeshPhysicalMaterial({ color: 0x3c4f8c, transparent: true, opacity: 0.8,
+      roughness: 0.3, metalness: 0.1, clearcoat: 0.7, clearcoatRoughness: 0.2,
+      depthWrite: false })
+  );
+  bubble.position.z = -4.2;
+  g.add(bubble);
+
   const plane = new THREE.Mesh(
     new THREE.PlaneGeometry(9.5, 9.5),
     new THREE.MeshBasicMaterial({ map: kanaTexture(entry.glyph), transparent: true,
@@ -671,6 +724,7 @@ function spawnEnemy(entry, speed){
     new THREE.MeshBasicMaterial({ color: 0xff5fd2, transparent: true, opacity: 0.7,
       side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false })
   );
+  ring.rotation.x = 0.2; // a slight tilt so it reads as wrapping the sphere, not flat-on
   g.add(ring);
 
   const halo = new THREE.Sprite(new THREE.SpriteMaterial({
@@ -685,7 +739,7 @@ function spawnEnemy(entry, speed){
   scene.add(g);
 
   enemies.push({
-    g, plane, ring, halo, entry,
+    g, bubble, plane, ring, halo, entry,
     x0: x, y: g.position.y,
     speed, drift: 0.5 + Math.random() * 1.1,
     phase: Math.random() * Math.PI * 2,
@@ -1210,10 +1264,14 @@ function update(dt){
       e.ring.material.color.setHex(0xff3344);
       e.ring.material.opacity = pulse;
       e.halo.material.color.setHex(0xff3344);
+      e.bubble.material.emissive.setHex(0xff3344);
+      e.bubble.material.emissiveIntensity = pulse * 0.8;
     } else {
       e.ring.material.color.setHex(isTarget ? 0x7dffb0 : nearMatch ? 0x9ff6ff : 0xff5fd2);
       e.ring.material.opacity = isTarget ? 1 : nearMatch ? 0.85 : 0.6;
       e.halo.material.color.setHex(isTarget ? 0x7dffb0 : 0xff5fd2);
+      e.bubble.material.emissive.setHex(isTarget ? 0x7dffb0 : 0xff5fd2);
+      e.bubble.material.emissiveIntensity = isTarget ? 0.35 : 0.15;
     }
 
     // Escaped the field.
@@ -1320,6 +1378,7 @@ const clock = new THREE.Clock();
 function tick(){
   requestAnimationFrame(tick);
   const dt = Math.min(clock.getDelta(), 0.05);
+  starMat.uniforms.uTime.value += dt;
   if (S.running && !S.paused) update(dt);
   else { updateEffects(dt); stars.rotation.z += dt * 0.01; }
   if (composer) composer.render(); else renderer.render(scene, camera);
