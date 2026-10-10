@@ -88,6 +88,29 @@ if (playerXBefore !== null){
   check(playerXAfter > playerXBefore, `drag moved the ship right (${playerXBefore.toFixed(1)} → ${playerXAfter.toFixed(1)})`);
 }
 
+/* ---------- on-screen bomb button ---------- */
+// Full streak-earning and screen-clear behavior is covered in test-playwright.mjs;
+// this just proves the mobile button itself is wired to the same useBomb() path.
+check(!(await page.locator('#mobileKb .kbkey.bomb').evaluate(el => el.classList.contains('ready'))),
+  'bomb button starts inert (no bomb banked yet)');
+await page.evaluate(() => {
+  KanaShmup.enemies.forEach(e => { e.alive = false; });
+  for (let i = 0; i < 2; i++){
+    const e = KanaShmup.spawn({ glyph: 'ぬ', romaji: 'nu', key: 'h99' });
+    e.g.position.y = 10; e.g.position.x = (i - 0.5) * 20; e.x0 = e.g.position.x;
+    e.speed = 0; e.drift = 0; e.phase = 0;
+  }
+  KanaShmup.state.bombs = 1;
+  KanaShmup.syncBombBadge();
+});
+check(await page.locator('#mobileKb .kbkey.bomb').evaluate(el => el.classList.contains('ready')),
+  'bomb button lights up once a bomb is banked');
+check((await page.evaluate(() => KanaShmup.liveEnemies())).length === 2, '2 enemies staged before tapping bomb');
+await page.tap('#mobileKb .kbkey.bomb');
+const afterMobileBomb = await page.evaluate(() => ({ live: KanaShmup.liveEnemies().length, bombs: KanaShmup.state.bombs }));
+check(afterMobileBomb.live === 0, 'tapping the on-screen bomb button clears every live enemy');
+check(afterMobileBomb.bombs === 0, 'tapping it consumes the banked bomb');
+
 /* ---------- pause button (the only way to pause without a keyboard) ---------- */
 await page.tap('#mobileKb .kbkey.pause');
 check(await page.locator('#pauseScreen').isVisible(), 'on-screen pause button opens the pause screen');

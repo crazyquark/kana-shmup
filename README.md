@@ -22,11 +22,14 @@ Prefer a local server? Anything works:
 |---|---|
 | letters | type the target's romaji |
 | Backspace | clear a half-typed word |
+| Space | detonate a banked bomb (see below) |
 | Esc | pause (Q quits to menu from there) |
 | Shift+M | mute (outside a run only) |
 
-Arrow keys / WASD fly the ship, which matters once enemies start shooting back
-from wave 3.
+Arrow keys / WASD fly the ship. The ship auto-fires straight up on its own —
+flying into a ship's lane is the aiming, no separate fire key — so movement
+matters from the first second of every run, not just once enemies start
+shooting back in wave 3.
 
 ### Touch / mobile
 
@@ -42,6 +45,8 @@ keyboard controls above are replaced automatically, no setting to flip:
   top of the on-screen keyboard. The pause screen has a "Quit to menu" button
   for the same reason (that button also now works for mouse/desktop users,
   who previously had no clickable way to quit — only the `Q` key).
+- **Bomb** — a matching on-screen button next to pause lights up once one is
+  banked; there's no Space key on a phone either.
 
 The canvas is sized to the space above the keyboard, so gameplay and typing
 never overlap.
@@ -58,8 +63,19 @@ never overlap.
 - **Flying pays off, but never gates.** Typing always destroys a matching ship
   from anywhere on screen — the drill never blocks on flying skill. But kill
   one while your ship is roughly underneath it and you score extra (a gold
-  beam instead of cyan, plus a "precision kill" callout), so movement has a
-  real reason to exist beyond dodging once bullets start in wave 3.
+  beam instead of cyan, plus a "precision kill" callout).
+- **Shoot it first for a bonus, but it's never required.** The ship auto-fires;
+  a hit "wounds" a ship (pulsing red ring) without destroying it. Type its
+  romaji while it's wounded and you finish it off for another bonus on top of
+  the positioning one ("precision finish" if you're aligned too). Miss the
+  ~2.4s window and it just regenerates — reverts to normal, no penalty, ready
+  to be shot again. Typing it unwounded still kills it outright exactly as
+  before; shooting is upside, never a setback.
+- **A 5-kill streak banks a bomb.** Press Space (or tap the mobile bomb
+  button) to detonate: every live ship and enemy bullet on screen is cleared
+  for a small flat bonus each. It doesn't count toward accuracy or the weak-
+  kana tracking, since bombing isn't recall — it's a panic button for when
+  the field gets away from you.
 - **The answer is never shown.** Once you start a word the buffer shows your
   progress and placeholders, never the remaining letters. Handing over the rest
   of the word after the first keystroke would defeat the point for `tsu`,
@@ -115,12 +131,25 @@ exists. `test-playwright.mjs` plays the game on desktop: it types romaji,
 checks partial words don't fire, that the answer isn't leaked, that escapes
 and bullets cost lives, that pause freezes the world, that the difficulty
 slider actually changes the pool, that killing a ship while aligned under it
-scores meaningfully more than killing it from across the screen, and — most
-usefully — that **all 104 romaji are typeable**. That last one exists because
-it caught a real bug: `m` was bound to the mute toggle, which silently made
-ma/mi/mu/me/mo/mya/myu/myo impossible to answer. `test-mobile.mjs` runs the
-same game under touch emulation and drives the on-screen keyboard and drag
-gestures directly.
+scores meaningfully more than killing it from across the screen, that
+auto-fire actually hits and wounds an aligned ship (the real collision path,
+not a test shortcut), that finishing a wounded ship scores more and that an
+unwounded one still dies outright, that a wounded ship genuinely regenerates
+if left alone past its window, that a 5-kill streak banks a bomb and Space
+clears the screen, and — most usefully — that **all 104 romaji are
+typeable**. That last one exists because it caught a real bug: `m` was bound
+to the mute toggle, which silently made ma/mi/mu/me/mo/mya/myu/myo impossible
+to answer. `test-mobile.mjs` runs the same game under touch emulation and
+drives the on-screen keyboard, drag gestures, and the mobile bomb button
+directly.
+
+A note on the wound/regenerate tests specifically: they're gated on
+simulated game-seconds elapsing (the ~2.4s wound window), and this headless
++ swiftshader + bloom environment has been observed running sim-time at
+roughly 30% of real-time — the render loop clamps `dt` to 0.05s/frame, and
+actual frame time here regularly exceeds that. Both tests poll from Node
+with a generous ceiling rather than assuming a fixed real-time wait tracks
+sim-time 1:1.
 
 ## Coverage
 

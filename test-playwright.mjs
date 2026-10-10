@@ -20,6 +20,23 @@ const boot = async () => {
 // The game spawns on a timer, so never assume a ship exists — wait for one.
 const waitForShip = () => page.waitForFunction(() => KanaShmup.enemies.some(e => e.alive), null, { timeout: 10000 });
 
+// For anything gated on simulated game-seconds elapsing (wound timers, wave
+// timers, …): don't assume sim-time tracks real-time 1:1. The render loop
+// clamps dt to 0.05s/frame, and under headless + swiftshader + bloom this
+// environment's actual frame time regularly exceeds that, so sim-time has
+// been observed running at roughly 30% of real-time — a 2.4 sim-second
+// timer can take ~8 real seconds here. Poll from Node (not a busy-loop
+// inside page.evaluate, which would only make the frame-time problem worse)
+// with a generous ceiling instead of a fixed wait tuned to the 1:1 case.
+async function waitForPageCondition(fn, timeoutMs = 15000, intervalMs = 300){
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs){
+    if (await page.evaluate(fn)) return true;
+    await page.waitForTimeout(intervalMs);
+  }
+  return false;
+}
+
 await boot();
 
 /* ---------- boot ---------- */
@@ -142,20 +159,28 @@ check(!(await page.locator('#pauseScreen').isVisible()), 'resume works');
 
 // The cap is 3, so stage exactly that many — including a digraph (きゃ),
 // which uses a smaller font size in the canvas texture, to prove it renders
-// cleanly alongside basic kana.
+// cleanly alongside basic kana. Wound one and bank a bomb so the screenshot
+// also shows off both new mechanics, not just the kill-to-type loop.
 await page.evaluate(() => {
   KanaShmup.enemies.forEach(e => { e.alive = false; });
   KanaShmup.state.spawnIn = 1e9;
-  [['か', 'ka', 'h5'], ['つ', 'tsu', 'h17'], ['きゃ', 'kya', 'h71']].forEach(([glyph, romaji, key], i) => {
+  KanaShmup.state.fireIn = 1e9;
+  KanaShmup.playerBullets.length = 0;
+  const spawned = [['か', 'ka', 'h5'], ['つ', 'tsu', 'h17'], ['きゃ', 'kya', 'h71']].map(([glyph, romaji, key], i) => {
     const e = KanaShmup.spawn({ glyph, romaji, key });
     e.g.position.y = 28 - i * 19;
     e.g.position.x = (i - 1) * 20;
     e.x0 = e.g.position.x; e.speed = 0; e.drift = 0;
+    return e;
   });
+  KanaShmup.woundEnemy(spawned[1]);
+  KanaShmup.state.bombs = 1;
+  KanaShmup.syncBombBadge();
 });
 await page.waitForTimeout(700);
 check((await page.evaluate(() => KanaShmup.liveEnemies())).length === 3, 'three-ship lineup staged for the screenshot');
 await page.screenshot({ path: 'shot-gameplay.png' });
+await page.evaluate(() => { KanaShmup.state.bombs = 0; KanaShmup.syncBombBadge(); });
 
 /* ---------- game over ---------- */
 await page.evaluate(() => {
@@ -236,6 +261,12 @@ const killAt = async (playerX) => {
   await page.evaluate((px) => {
     KanaShmup.enemies.forEach(e => { e.alive = false; });
     KanaShmup.state.spawnIn = 1e9;
+    // Auto-fire's very first shot leaves the gun at reset time, from the
+    // default player position, before this setup gets to move the ship —
+    // left alone it can wound this test's target regardless of which
+    // scenario is running. Neutralize it the same way spawnIn is parked.
+    KanaShmup.playerBullets.length = 0;
+    KanaShmup.state.fireIn = 1e9;
     const e = KanaShmup.spawn({ glyph: 'きょ', romaji: 'kyo', key: 'h90' });
     // phase=0 too: the update loop applies sin(age*drift + phase)*5.5 to x every
     // frame regardless of drift/speed, so a random leftover phase still jitters
@@ -256,6 +287,119 @@ check(aligned.score >= Math.round(far.score * 1.25),
   `alignment bonus is a meaningful fraction of score, not rounding noise (${aligned.score} vs ${far.score})`);
 check(aligned.toast.toLowerCase().includes('precision'), 'aligned kill shows the precision-kill callout');
 check(!far.toast.toLowerCase().includes('precision'), 'misaligned kill does not claim precision');
+
+/* ---------- auto-fire: the ship shoots on its own and wounds an aligned enemy ---------- */
+await boot();
+await page.click('#startBtn');
+await page.evaluate(() => {
+  KanaShmup.enemies.forEach(e => { e.alive = false; });
+  KanaShmup.state.spawnIn = 1e9;
+  const e = KanaShmup.spawn({ glyph: 'ぬ', romaji: 'nu', key: 'h99' });
+  // Directly in the player's lane, close enough that the first real shot reaches it quickly.
+  e.g.position.y = 0; e.g.position.x = KanaShmup.player.position.x; e.x0 = e.g.position.x;
+  e.speed = 0; e.drift = 0; e.phase = 0;
+});
+const woundedByRealFire = await waitForPageCondition(() => KanaShmup.enemies[0]?.wounded ?? false);
+check(woundedByRealFire, 'auto-fire actually hits and wounds an aligned enemy (real collision path, not the test hook)');
+
+/* ---------- wounded bonus: finishing a shot enemy scores more; typing still kills either way ---------- */
+const killWound = async (wounded) => {
+  await boot();
+  await page.click('#startBtn');
+  await page.evaluate((w) => {
+    KanaShmup.enemies.forEach(e => { e.alive = false; });
+    KanaShmup.state.spawnIn = 1e9;
+    KanaShmup.playerBullets.length = 0;
+    KanaShmup.state.fireIn = 1e9;
+    const e = KanaShmup.spawn({ glyph: 'ぬ', romaji: 'nu', key: 'h99' });
+    e.g.position.y = 0; e.g.position.x = 0; e.x0 = 0; e.speed = 0; e.drift = 0; e.phase = 0;
+    KanaShmup.player.position.x = 0;   // aligned in both cases, isolates the wounded factor
+    if (w) KanaShmup.woundEnemy(e);
+  }, wounded);
+  await page.keyboard.type('nu', { delay: 30 });
+  await page.waitForTimeout(200);
+  return { score: await page.evaluate(() => KanaShmup.state.score),
+           toast: (await page.locator('#toast').innerText()).trim().toLowerCase() };
+};
+const healthy = await killWound(false);
+const finished = await killWound(true);
+check(finished.score > healthy.score, `finishing a wounded enemy scores more (${finished.score} vs ${healthy.score})`);
+check(finished.score >= Math.round(healthy.score * 1.4),
+  `wounded bonus is a meaningful fraction of score, not rounding noise (${finished.score} vs ${healthy.score})`);
+check(healthy.toast.includes('precision') && !healthy.toast.includes('finish'),
+  'an unwounded (but aligned) kill only claims precision, not "finished"');
+check(finished.toast.includes('precision') && finished.toast.includes('finish'),
+  'a wounded+aligned kill claims "precision finish"');
+
+/* ---------- typing still kills an UNwounded enemy outright — shooting is never required ---------- */
+await boot();
+await page.click('#startBtn');
+await page.evaluate(() => {
+  KanaShmup.enemies.forEach(e => { e.alive = false; });
+  KanaShmup.state.spawnIn = 1e9;
+  const e = KanaShmup.spawn({ glyph: 'ぬ', romaji: 'nu', key: 'h99' });
+  e.g.position.y = 0; e.speed = 0; e.drift = 0;
+});
+await page.keyboard.type('nu', { delay: 30 });
+await page.waitForTimeout(200);
+check((await page.evaluate(() => KanaShmup.state.kills)) === 1, 'typing alone destroys an unwounded enemy — shooting is optional, not a gate');
+
+/* ---------- a wounded enemy regenerates (reverts, not destroyed) if not finished in time ---------- */
+await boot();
+await page.click('#startBtn');
+await page.evaluate(() => {
+  KanaShmup.enemies.forEach(e => { e.alive = false; });
+  KanaShmup.state.spawnIn = 1e9;
+  // Also neutralize auto-fire and park the enemy well outside its range —
+  // left alone, a fresh shot landing right after regeneration (an unwounded
+  // enemy in range is fair game again) would re-wound it before this can
+  // observe the reverted state in between.
+  KanaShmup.playerBullets.length = 0;
+  KanaShmup.state.fireIn = 1e9;
+  const e = KanaShmup.spawn({ glyph: 'ぬ', romaji: 'nu', key: 'h99' });
+  e.g.position.y = 0; e.g.position.x = 50; e.x0 = 50; e.speed = 0; e.drift = 0; e.phase = 0;
+  KanaShmup.woundEnemy(e);
+});
+const woundedRightAfter = await page.evaluate(() => KanaShmup.enemies[0].wounded);
+const reverted = await waitForPageCondition(() => !KanaShmup.enemies[0].wounded);
+const stillAlive = await page.evaluate(() => KanaShmup.enemies[0].alive);
+check(woundedRightAfter, 'shooting an enemy marks it wounded');
+check(reverted, 'a wounded enemy regenerates (reverts) if not finished before the window closes');
+check(stillAlive, 'regenerating does not destroy the enemy, it only reverts the wound');
+
+/* ---------- streak bomb: every 5-kill streak banks one; Space detonates and clears the screen ---------- */
+await boot();
+await page.click('#startBtn');
+await page.evaluate(() => {
+  KanaShmup.state.spawnIn = 1e9; KanaShmup.state.fireIn = 1e9; KanaShmup.playerBullets.length = 0;
+});
+for (let i = 0; i < 5; i++){
+  await page.evaluate(() => {
+    KanaShmup.enemies.forEach(e => { e.alive = false; });
+    const e = KanaShmup.spawn({ glyph: 'ぬ', romaji: 'nu', key: 'h99' });
+    e.g.position.y = 20; e.x0 = 0; e.g.position.x = 0; e.speed = 0; e.drift = 0; e.phase = 0;
+  });
+  await page.keyboard.type('nu', { delay: 20 });
+  await page.waitForTimeout(80);
+}
+const bombsAfterStreak = await page.evaluate(() => KanaShmup.state.bombs);
+check(bombsAfterStreak >= 1, `a 5-kill streak banks a bomb (bombs=${bombsAfterStreak})`);
+check(await page.locator('#bombBadge').evaluate(el => getComputedStyle(el).opacity) !== '0',
+  'the bomb badge becomes visible once a bomb is banked');
+
+await page.evaluate(() => {
+  KanaShmup.enemies.forEach(e => { e.alive = false; });
+  for (let i = 0; i < 3; i++){
+    const e = KanaShmup.spawn({ glyph: 'ぬ', romaji: 'nu', key: 'h99' });
+    e.g.position.y = 10; e.g.position.x = (i - 1) * 20; e.x0 = e.g.position.x; e.speed = 0; e.drift = 0; e.phase = 0;
+  }
+});
+check((await page.evaluate(() => KanaShmup.liveEnemies())).length === 3, '3 enemies staged before the bomb');
+await page.keyboard.press(' ');
+await page.waitForTimeout(150);
+const afterBomb = await page.evaluate(() => ({ live: KanaShmup.liveEnemies().length, bombs: KanaShmup.state.bombs }));
+check(afterBomb.live === 0, 'Space detonates the bomb and clears every live enemy');
+check(afterBomb.bombs === bombsAfterStreak - 1, 'detonating consumes exactly one banked bomb');
 
 /* ---------- every glyph must fit its sprite canvas without clipping ---------- */
 const clipped = await page.evaluate(() => {

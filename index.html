@@ -55,6 +55,10 @@
     font-size:15px;letter-spacing:.2em;color:var(--bad);opacity:0;
     transition:opacity .3s;pointer-events:none;text-transform:uppercase}
   #toast.good{color:var(--ok)}
+  #bombBadge{position:fixed;top:64px;right:18px;font-size:12px;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--amber);opacity:0;transition:opacity .25s;
+    pointer-events:none;font-weight:700;text-align:right;
+    text-shadow:0 0 12px rgba(255,200,107,.5)}
 
   /* ---------- screens ---------- */
   .screen{position:fixed;inset:0;display:flex;flex-direction:column;
@@ -119,7 +123,7 @@
     background:linear-gradient(180deg,rgba(8,14,22,.35),rgba(5,8,14,.94) 40%);
     backdrop-filter:blur(4px);touch-action:none}
   #mobileKb.show{display:flex}
-  #mobileKb .kbhead{width:100%;max-width:640px;display:flex;justify-content:flex-end}
+  #mobileKb .kbhead{width:100%;max-width:640px;display:flex;justify-content:flex-end;gap:8px}
   #mobileKb .kbrow{display:flex;gap:5px;width:100%;max-width:640px;justify-content:center}
   #mobileKb button.kbkey{flex:1 1 0;min-width:0;padding:0;height:42px;
     font-size:15px;font-weight:700;letter-spacing:0;
@@ -133,6 +137,14 @@
     font-size:11px;letter-spacing:.15em;
     background:rgba(255,200,107,.1);border-color:rgba(255,200,107,.35)}
   #mobileKb button.kbkey.pause:active{background:rgba(255,200,107,.3)}
+  #mobileKb button.kbkey.bomb{flex:0 0 auto;height:26px;padding:0 14px;
+    font-size:11px;letter-spacing:.15em;
+    background:rgba(255,200,107,.04);border-color:rgba(255,200,107,.15);
+    color:rgba(234,246,255,.35)}
+  #mobileKb button.kbkey.bomb.ready{background:rgba(255,200,107,.2);
+    border-color:rgba(255,200,107,.6);color:#eaf6ff;
+    box-shadow:0 0 14px rgba(255,200,107,.35)}
+  #mobileKb button.kbkey.bomb.ready:active{background:rgba(255,200,107,.4)}
 
   #quitBtn{opacity:.75}
 </style>
@@ -158,6 +170,7 @@
 
 <div id="combo"></div>
 <div id="toast"></div>
+<div id="bombBadge"></div>
 
 <div id="bufferWrap">
   <div id="guide">type the romaji</div>
@@ -211,7 +224,10 @@
 
 <!-- ---------- mobile on-screen keyboard ---------- -->
 <div id="mobileKb">
-  <div class="kbhead"><button class="kbkey pause" data-k="pause">⏸ pause</button></div>
+  <div class="kbhead">
+    <button class="kbkey bomb" data-k="bomb">⦿ bomb</button>
+    <button class="kbkey pause" data-k="pause">⏸ pause</button>
+  </div>
   <div class="kbrow">
     <button class="kbkey" data-k="q">q</button>
     <button class="kbkey" data-k="w">w</button>
@@ -444,6 +460,9 @@ const Audio_ = {
   kill(pitch = 1){ this.sweep(880 * pitch, 180, 0.24); },
   wrong(){ this.blip(140, 0.09, 'sawtooth', 0.05); },
   hurt(){ this.noise(0.3, 0.1); this.sweep(220, 60, 0.35, 'triangle', 0.06); },
+  shoot(){ this.blip(1500, 0.02, 'square', 0.015); },
+  wound(){ this.blip(520, 0.05, 'square', 0.05); },
+  bomb(){ this.noise(0.5, 0.12); this.sweep(1200, 70, 0.5, 'sawtooth', 0.09); },
 };
 
 /* ==========================================================================
@@ -672,6 +691,7 @@ function spawnEnemy(entry, speed){
     phase: Math.random() * Math.PI * 2,
     age: 0, fireIn: 2.2 + Math.random() * 2.4,
     alive: true, dying: 0,
+    wounded: false, woundTimer: 0,
   });
 }
 
@@ -702,6 +722,27 @@ function spawnBullet(from){
   bullets.push({ m, vx: (dx / len) * sp, vy: (dy / len) * sp });
 }
 
+/* ---------- player bullets (auto-fire) ---------- */
+const playerBullets = [];
+function spawnPlayerBullet(){
+  const m = new THREE.Mesh(
+    new THREE.PlaneGeometry(1.8, 1.8),
+    new THREE.MeshBasicMaterial({ map: GLOW_TEX, color: 0x8bf7ff, transparent: true,
+      blending: THREE.AdditiveBlending, depthWrite: false })
+  );
+  m.position.copy(player.position); m.position.z = 0;
+  scene.add(m);
+  playerBullets.push({ m });
+  Audio_.shoot();
+}
+
+function woundEnemy(e){
+  e.wounded = true;
+  e.woundTimer = WOUND_DURATION;
+  spawnBurst(e.g.position.x, e.g.position.y, 0x8bf7ff, 10);
+  Audio_.wound();
+}
+
 /* ==========================================================================
    7. GAME STATE
    ========================================================================== */
@@ -719,6 +760,24 @@ const RESPAWN_GAP = 0.35;
 const ALIGN_RANGE = 11;
 const PRECISE_ALIGN = 0.6;
 
+// Auto-fire: the ship shoots straight up on its own — flying into an enemy's
+// lane is what lands the shot, no separate fire button. A hit "wounds" the
+// ship for WOUND_DURATION; typing its romaji while wounded still isn't
+// required (typing alone always works, same as before), but it scores a
+// bonus on top of the positioning one. Miss the window and it regenerates
+// (reverts to normal, no penalty) — shooting is upside, never a setback.
+const FIRE_INTERVAL = 0.35;
+const PLAYER_BULLET_SPEED = 85;
+const PLAYER_BULLET_HIT_RANGE = 4.6;
+const WOUND_DURATION = 2.4;
+const WOUNDED_BONUS = 0.5;
+
+// Streak bomb: every 5 kills in a row banks one bomb (capped so the HUD
+// badge can't read absurd numbers); Space (or the mobile bomb key) detonates
+// one, clearing every live enemy and enemy bullet on screen.
+const BOMB_STREAK = 5;
+const BOMB_MAX = 3;
+
 const S = {
   running: false, over: false, paused: false,
   mode: 'hiragana', pool: [], difficulty: 3,
@@ -731,13 +790,14 @@ const S = {
   spawnIn: 0, spawnEvery: 1.5, speed: 5.5, maxOnScreen: 3,
   elapsed: 0, combo: 0, bestCombo: 0, invuln: 0,
   missedSetup: new Set(),
+  fireIn: 0, bombs: 0, bombCreditedAt: 0,
 };
 
 const el = id => document.getElementById(id);
 const ui = {
   score: el('score'), wave: el('wave'), lives: el('livesVal'), acc: el('acc'),
   scriptName: el('scriptName'), buffer: el('buffer'), combo: el('combo'),
-  toast: el('toast'), guide: el('guide'),
+  toast: el('toast'), guide: el('guide'), bombBadge: el('bombBadge'),
 };
 
 function accuracy(){
@@ -749,6 +809,11 @@ function refreshHud(){
   ui.lives.textContent = S.lives > 0 ? '♦ '.repeat(S.lives).trim() : '—';
   ui.acc.textContent = S.typed ? accuracy() + '%' : '—';
   ui.scriptName.textContent = S.mode === 'both' ? 'both' : S.mode === 'hiragana' ? 'ひらがな' : 'カタカナ';
+}
+function syncBombBadge(){
+  ui.bombBadge.textContent = `⦿ BOMB ×${S.bombs} — SPACE`;
+  ui.bombBadge.style.opacity = S.bombs > 0 ? 1 : 0;
+  document.querySelectorAll('#mobileKb .kbkey.bomb').forEach(b => b.classList.toggle('ready', S.bombs > 0));
 }
 let missTimeout = 0;
 function setBuffer(text, cls){
@@ -842,6 +907,7 @@ addEventListener('keydown', ev => {
   if (!S.running || S.paused || S.over) return;
 
   if (ev.key === 'Backspace'){ ev.preventDefault(); clearBuffer(); return; }
+  if (ev.key === ' '){ ev.preventDefault(); useBomb(); return; }
 
   const k = ev.key.toLowerCase();
   if (!/^[a-z]$/.test(k)) return;
@@ -851,6 +917,27 @@ addEventListener('keydown', ev => {
 });
 
 function clearBuffer(){ S.buffer = ''; setBuffer(''); retarget(); }
+
+function useBomb(){
+  if (!S.running || S.paused || S.over || S.bombs <= 0) return;
+  S.bombs--;
+  const cleared = enemies.filter(e => e.alive);
+  for (const e of cleared){
+    e.alive = false;
+    scene.remove(e.g);
+    spawnBurst(e.g.position.x, e.g.position.y, 0xffc86b, 30);
+    // Deliberately not touched: mastery/accuracy. A bomb kill isn't a recall,
+    // so it shouldn't look like one on the game-over weak-spots list.
+    S.score += 25;
+  }
+  for (const b of bullets) scene.remove(b.m);
+  bullets.length = 0;
+  Audio_.bomb();
+  flashToast(cleared.length ? `bomb! +${cleared.length * 25}` : 'bomb!', 'good');
+  S.spawnIn = Math.min(S.spawnIn, RESPAWN_GAP);
+  refreshHud();
+  syncBombBadge();
+}
 
 function togglePause(){
   if (!S.running || S.over) return;
@@ -898,14 +985,16 @@ function handleChar(k){
     const s = stat(victim.entry.key); s.seen++; s.ok++;
     saveMastery();
 
-    // score: base + proximity + positioning + streak, longer romaji worth more.
-    // The positioning bonus is purely additive — typing already fired
-    // regardless of where the player's ship is, this just rewards flying
-    // under the target before finishing it.
+    // score: base + proximity + positioning + wounded + streak, longer romaji
+    // worth more. Positioning and "finished while wounded" are both purely
+    // additive — typing already fired regardless of alignment or whether the
+    // ship had been auto-fire-wounded, these just reward doing it anyway.
     const prox = Math.max(0, 1 - (victim.g.position.y + VIEW_H / 2) / VIEW_H);
     const align = Math.max(0, 1 - Math.abs(player.position.x - victim.g.position.x) / ALIGN_RANGE);
+    const wounded = victim.wounded;
     S.score += Math.round((60 + victim.entry.romaji.length * 22) *
-      (1 + prox * 0.6) * (1 + align * 0.35) * (1 + Math.min(S.combo, 10) * 0.05));
+      (1 + prox * 0.6) * (1 + align * 0.35) * (1 + (wounded ? WOUNDED_BONUS : 0)) *
+      (1 + Math.min(S.combo, 10) * 0.05));
 
     killEnemy(victim, align);
     Audio_.kill(0.8 + Math.min(S.combo, 8) * 0.06);
@@ -914,8 +1003,23 @@ function handleChar(k){
     setBuffer('');
     retarget();
     flashCombo();
-    if (align >= PRECISE_ALIGN) flashToast('precision kill', 'good');
+
+    let calloutMsg = '';
+    if (wounded && align >= PRECISE_ALIGN) calloutMsg = 'precision finish';
+    else if (wounded) calloutMsg = 'finished off';
+    else if (align >= PRECISE_ALIGN) calloutMsg = 'precision kill';
+    if (calloutMsg) flashToast(calloutMsg, 'good');
+
+    // Bomb: every BOMB_STREAK consecutive kills banks one, capped at BOMB_MAX.
+    // A while loop in case combo jumps past more than one threshold at once.
+    while (S.combo >= S.bombCreditedAt + BOMB_STREAK && S.bombs < BOMB_MAX){
+      S.bombCreditedAt += BOMB_STREAK;
+      S.bombs++;
+      flashToast('bomb ready · space', 'good');
+    }
+
     refreshHud();
+    syncBombBadge();
   }
 }
 
@@ -967,6 +1071,8 @@ function resetGame(){
   enemies.length = 0;
   for (const b of bullets) scene.remove(b.m);
   bullets.length = 0;
+  for (const b of playerBullets) scene.remove(b.m);
+  playerBullets.length = 0;
 
   S.running = true; S.over = false; S.paused = false;
   S.score = 0; S.wave = 1; S.lives = 3;
@@ -974,6 +1080,7 @@ function resetGame(){
   S.buffer = ''; S.target = null;
   S.spawnIn = 0.7; S.spawnEvery = 1.5; S.speed = 5.5; S.maxOnScreen = 3;
   S.elapsed = 0; S.combo = 0; S.bestCombo = 0; S.invuln = 0;
+  S.fireIn = 0; S.bombs = 0; S.bombCreditedAt = 0;
 
   player.position.set(0, -38, 0);
   player.visible = true;
@@ -983,6 +1090,7 @@ function resetGame(){
   el('titleScreen').classList.add('hidden');
   setBuffer('');
   refreshHud();
+  syncBombBadge();
   syncMobileUI();
 }
 
@@ -992,11 +1100,15 @@ function quitToMenu(){
   enemies.length = 0;
   for (const b of bullets) scene.remove(b.m);
   bullets.length = 0;
+  for (const b of playerBullets) scene.remove(b.m);
+  playerBullets.length = 0;
+  S.bombs = 0; S.bombCreditedAt = 0;
   S.buffer = ''; setBuffer('');
   el('pauseScreen').classList.add('hidden');
   el('overScreen').classList.add('hidden');
   el('titleScreen').classList.remove('hidden');
   refreshHud();
+  syncBombBadge();
   renderDrillHint();
   syncMobileUI();
 }
@@ -1043,6 +1155,11 @@ function update(dt){
     if (S.invuln <= 0) player.visible = true;
   }
 
+  // ---- auto-fire ----
+  // The ship shoots on its own; flying into an enemy's lane is the aiming.
+  S.fireIn -= dt;
+  if (S.fireIn <= 0){ spawnPlayerBullet(); S.fireIn = FIRE_INTERVAL; }
+
   // ---- wave curve ----
   // Enemy count never scales up (maxOnScreen is a fixed 3) — only the fall
   // speed and the floor on spawn gap do.
@@ -1075,13 +1192,29 @@ function update(dt){
     e.g.position.x = e.x0 + Math.sin(e.age * e.drift + e.phase) * 5.5;
     e.ring.rotation.z -= dt * 0.9;
 
+    // Wounded: a shot connected, typing it now (not required) scores a bonus.
+    // Miss the window and it regenerates — no penalty, just an opportunity gone.
+    if (e.wounded){
+      e.woundTimer -= dt;
+      if (e.woundTimer <= 0) e.wounded = false;
+    }
+
     const isTarget = S.target === e;
     const nearMatch = S.buffer && e.alive && e.entry.romaji.startsWith(S.buffer);
     const sc = isTarget ? 1.14 : nearMatch ? 1.07 : 1;
     e.g.scale.lerp(new THREE.Vector3(sc, sc, 1), 1 - Math.pow(0.001, dt));
-    e.ring.material.color.setHex(isTarget ? 0x7dffb0 : nearMatch ? 0x9ff6ff : 0xff5fd2);
-    e.ring.material.opacity = isTarget ? 1 : nearMatch ? 0.85 : 0.6;
-    e.halo.material.color.setHex(isTarget ? 0x7dffb0 : 0xff5fd2);
+    if (e.wounded){
+      // Pulses faster as the window runs out — a visible countdown to "regenerates".
+      const urgency = 1 - e.woundTimer / WOUND_DURATION;
+      const pulse = 0.55 + 0.45 * Math.sin(e.age * (6 + urgency * 10));
+      e.ring.material.color.setHex(0xff3344);
+      e.ring.material.opacity = pulse;
+      e.halo.material.color.setHex(0xff3344);
+    } else {
+      e.ring.material.color.setHex(isTarget ? 0x7dffb0 : nearMatch ? 0x9ff6ff : 0xff5fd2);
+      e.ring.material.opacity = isTarget ? 1 : nearMatch ? 0.85 : 0.6;
+      e.halo.material.color.setHex(isTarget ? 0x7dffb0 : 0xff5fd2);
+    }
 
     // Escaped the field.
     if (e.alive && enemyReachedPlayer(e)){
@@ -1121,6 +1254,23 @@ function update(dt){
       if (!S.running) return;
     } else if (off){
       scene.remove(b.m); bullets.splice(i, 1);
+    }
+  }
+
+  // ---- player bullets (auto-fire vs. enemies) ----
+  for (let i = playerBullets.length - 1; i >= 0; i--){
+    const b = playerBullets[i];
+    b.m.position.y += PLAYER_BULLET_SPEED * dt;
+    if (b.m.position.y > VIEW_H / 2 + 6){
+      scene.remove(b.m); playerBullets.splice(i, 1);
+      continue;
+    }
+    // Already-wounded enemies don't re-trigger — the bullet just passes through.
+    const victim = enemies.find(e => e.alive && !e.wounded &&
+      Math.hypot(b.m.position.x - e.g.position.x, b.m.position.y - e.g.position.y) < PLAYER_BULLET_HIT_RANGE);
+    if (victim){
+      woundEnemy(victim);
+      scene.remove(b.m); playerBullets.splice(i, 1);
     }
   }
 
@@ -1207,6 +1357,7 @@ el('quitBtn').addEventListener('click', () => quitToMenu());
 
 S.pool = buildPool(S.mode, S.difficulty);
 refreshHud();
+syncBombBadge();
 renderDrillHint();
 
 /* ==========================================================================
@@ -1239,6 +1390,7 @@ if (TOUCH){
     btn.addEventListener('click', () => {
       const k = btn.dataset.k;
       if (k === 'pause'){ togglePause(); return; }
+      if (k === 'bomb'){ useBomb(); return; }
       if (!S.running || S.paused || S.over) return;
       Audio_.init();
       if (k === 'back'){ clearBuffer(); return; }
@@ -1284,13 +1436,14 @@ if (TOUCH){
 // Console handle — handy for poking at a run from devtools, and what the
 // automated test drives. Read-only in spirit: nothing in the game reads it.
 window.KanaShmup = {
-  state: S, enemies, bullets, mastery, ROMAJI, HIRAGANA, KATAKANA, player,
+  state: S, enemies, bullets, playerBullets, mastery, ROMAJI, HIRAGANA, KATAKANA, player,
   poolCount: () => S.pool.length,
   targetRomaji: () => S.target?.entry.romaji ?? null,
   liveEnemies: () => enemies.filter(e => e.alive).map(e => e.entry),
   // Deterministic spawn, used by the test suite to exercise every romaji
   // without waiting on the wave timer.
   spawn: (entry) => { spawnEnemy(entry, 0); return enemies[enemies.length - 1]; },
+  woundEnemy, useBomb, syncBombBadge,   // exposed so tests can drive these without waiting on auto-fire/streaks
   kanaTexture,   // so the tests can measure whether a glyph fits its canvas
 };
 </script>
