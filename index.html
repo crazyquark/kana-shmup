@@ -494,6 +494,14 @@ scene.add(bubbleRim);
 // Orthographic, height fixed at VIEW_H world units — the play field never
 // changes size with the window, only its width does.
 const VIEW_H = 100;
+// A modest pitch-down tilt (think Ikaruga: real lit 3D models, camera just
+// off top-down rather than a steep diorama angle) so ships and bubbles read
+// as actual solid objects instead of flat camera-facing cutouts. Tilting
+// around X only foreshortens world-Y on screen, not world-X, so the camera's
+// vertical frustum is scaled by cos(CAM_TILT) to cancel that out — world
+// units still map to the same screen scale touch-drag and spawn bounds
+// elsewhere in the file assume.
+const CAM_TILT = THREE.MathUtils.degToRad(16);
 let camera, viewW;
 // kbHeightPx: CSS-pixel height the on-screen mobile keyboard reserves at the
 // bottom of the window. 0 on desktop. The canvas is sized to the remainder
@@ -502,8 +510,10 @@ let kbHeightPx = 0;
 function makeCamera(){
   const aspect = innerWidth / (innerHeight - kbHeightPx);
   viewW = VIEW_H * aspect;
-  camera = new THREE.OrthographicCamera(-viewW / 2, viewW / 2, VIEW_H / 2, -VIEW_H / 2, 0.1, 500);
-  camera.position.set(0, 0, 100);
+  const camH = VIEW_H * Math.cos(CAM_TILT);
+  camera = new THREE.OrthographicCamera(-viewW / 2, viewW / 2, camH / 2, -camH / 2, 0.1, 600);
+  const dist = 160;
+  camera.position.set(0, -Math.sin(CAM_TILT) * dist, Math.cos(CAM_TILT) * dist);
   camera.lookAt(0, 0, 0);
 }
 makeCamera();
@@ -599,11 +609,16 @@ function kanaTexture(glyph){
 /* ---------- player ---------- */
 const player = new THREE.Group();
 {
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([
-     0, 3.2, 0,  -2.6, -2.2, 0,   2.6, -2.2, 0,
-  ]), 3));
-  const body = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0x8bf7ff }));
+  // A real lit hull, not a flat cutout: a 4-sided cone (apex already points
+  // +Y, "up the field") spun 45° so it presents a diamond-like cross-section.
+  // Emissive keeps it readable even on the shadowed side — unlike the enemy
+  // bubbles, the player's own ship always needs to stay clearly visible.
+  const body = new THREE.Mesh(
+    new THREE.ConeGeometry(2.9, 6.2, 4),
+    new THREE.MeshPhysicalMaterial({ color: 0x8bf7ff, emissive: 0x1b5a66, emissiveIntensity: 0.55,
+      roughness: 0.2, metalness: 0.4, clearcoat: 1, clearcoatRoughness: 0.1 })
+  );
+  body.rotation.y = Math.PI / 4;
   player.add(body);
 
   const ring = new THREE.Mesh(
@@ -717,6 +732,10 @@ function spawnEnemy(entry, speed){
       depthWrite: false })
   );
   plane.position.z = 1;
+  // Billboarded against the camera's fixed tilt so the glyph itself stays
+  // perfectly square-on and legible — the drill depends on reading it at a
+  // glance, so only the ring/bubble/halo should show the tilt, not the text.
+  plane.rotation.x = CAM_TILT;
   g.add(plane);
 
   const ring = new THREE.Mesh(
@@ -724,7 +743,8 @@ function spawnEnemy(entry, speed){
     new THREE.MeshBasicMaterial({ color: 0xff5fd2, transparent: true, opacity: 0.7,
       side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false })
   );
-  ring.rotation.x = 0.2; // a slight tilt so it reads as wrapping the sphere, not flat-on
+  // Left flat (world-plane) on purpose: the camera's own tilt is what makes
+  // it read as an ellipse wrapping the sphere now, not a per-object hack.
   g.add(ring);
 
   const halo = new THREE.Sprite(new THREE.SpriteMaterial({
@@ -762,11 +782,11 @@ function killEnemy(e, align = 0){
 /* ---------- enemy bullets ---------- */
 const bullets = [];
 function spawnBullet(from){
-  const m = new THREE.Mesh(
-    new THREE.PlaneGeometry(2.2, 2.2),
-    new THREE.MeshBasicMaterial({ map: GLOW_TEX, color: 0xff5fd2, transparent: true,
-      blending: THREE.AdditiveBlending, depthWrite: false })
-  );
+  const m = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: GLOW_TEX, color: 0xff5fd2, transparent: true,
+    blending: THREE.AdditiveBlending, depthWrite: false,
+  }));
+  m.scale.set(2.2, 2.2, 1);
   m.position.copy(from); m.position.z = 0;
   scene.add(m);
   const dx = player.position.x - from.x;
@@ -779,11 +799,11 @@ function spawnBullet(from){
 /* ---------- player bullets (auto-fire) ---------- */
 const playerBullets = [];
 function spawnPlayerBullet(){
-  const m = new THREE.Mesh(
-    new THREE.PlaneGeometry(1.8, 1.8),
-    new THREE.MeshBasicMaterial({ map: GLOW_TEX, color: 0x8bf7ff, transparent: true,
-      blending: THREE.AdditiveBlending, depthWrite: false })
-  );
+  const m = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: GLOW_TEX, color: 0x8bf7ff, transparent: true,
+    blending: THREE.AdditiveBlending, depthWrite: false,
+  }));
+  m.scale.set(1.8, 1.8, 1);
   m.position.copy(player.position); m.position.z = 0;
   scene.add(m);
   playerBullets.push({ m });

@@ -166,6 +166,10 @@ await page.evaluate(() => {
   KanaShmup.state.spawnIn = 1e9;
   KanaShmup.state.fireIn = 1e9;
   KanaShmup.playerBullets.length = 0;
+  // The escaped-ship test above left the ship mid-invuln-blink; without this
+  // the screenshot has a coin-flip chance of landing on a blinked-off frame.
+  KanaShmup.state.invuln = 0;
+  KanaShmup.player.visible = true;
   const spawned = [['か', 'ka', 'h5'], ['つ', 'tsu', 'h17'], ['きゃ', 'kya', 'h71']].map(([glyph, romaji, key], i) => {
     const e = KanaShmup.spawn({ glyph, romaji, key });
     e.g.position.y = 28 - i * 19;
