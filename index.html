@@ -609,32 +609,74 @@ function kanaTexture(glyph){
 /* ---------- player ---------- */
 const player = new THREE.Group();
 {
-  // A real lit hull, not a flat cutout: a 4-sided cone (apex already points
-  // +Y, "up the field") spun 45° so it presents a diamond-like cross-section.
-  // Emissive keeps it readable even on the shadowed side — unlike the enemy
-  // bubbles, the player's own ship always needs to stay clearly visible.
-  const body = new THREE.Mesh(
-    new THREE.ConeGeometry(2.9, 6.2, 4),
-    new THREE.MeshPhysicalMaterial({ color: 0x8bf7ff, emissive: 0x1b5a66, emissiveIntensity: 0.55,
-      roughness: 0.2, metalness: 0.4, clearcoat: 1, clearcoatRoughness: 0.1 })
-  );
-  body.rotation.y = Math.PI / 4;
-  player.add(body);
+  // One continuous hull extruded from a fighter silhouette, with a bevel so
+  // its edges catch the key light — reads as a machined airframe rather than
+  // primitives bolted together. Kept mid-toned with only a faint emissive so
+  // the lighting shows; a bright emissive hull just blooms out to white.
+  const half = [
+    [0, 3.7], [0.42, 2.3], [0.62, 0.9], [1.25, 0.05], [3.5, -1.55],
+    [3.55, -2.15], [1.35, -1.75], [1.15, -2.85], [0.45, -2.45], [0, -2.65],
+  ];
+  const outline = new THREE.Shape();
+  outline.moveTo(...half[0]);
+  for (let i = 1; i < half.length; i++) outline.lineTo(...half[i]);
+  for (let i = half.length - 2; i > 0; i--) outline.lineTo(-half[i][0], half[i][1]);
+  outline.closePath();
+  const hullGeo = new THREE.ExtrudeGeometry(outline, {
+    depth: 0.35, bevelEnabled: true, bevelThickness: 0.22, bevelSize: 0.18, bevelSegments: 4,
+  });
+  hullGeo.translate(0, 0, -0.2);
+  const hullMat = new THREE.MeshPhysicalMaterial({ color: 0x485c6e, emissive: 0x0b2632, emissiveIntensity: 0.5,
+    roughness: 0.38, metalness: 0.7, clearcoat: 0.7, clearcoatRoughness: 0.18 });
+  player.add(new THREE.Mesh(hullGeo, hullMat));
 
-  const ring = new THREE.Mesh(
-    new THREE.RingGeometry(3.6, 4.1, 40),
-    new THREE.MeshBasicMaterial({ color: 0x2fb7d6, transparent: true, opacity: 0.5,
-      side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false })
-  );
-  player.add(ring);
-  player.userData.ring = ring;
+  // Raised spine down the centreline gives the hull real volume under the tilt.
+  const spine = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 16), hullMat);
+  spine.scale.set(0.62, 2.7, 0.55);
+  spine.position.set(0, 0.1, 0.45);
+  player.add(spine);
 
-  const eng = new THREE.Sprite(new THREE.SpriteMaterial({
-    map: GLOW_TEX, color: 0x36d6ff, transparent: true, opacity: 0.75,
-    blending: THREE.AdditiveBlending, depthWrite: false,
-  }));
-  eng.scale.set(7, 7, 1); eng.position.set(0, -3, 0);
-  player.add(eng);
+  const canopy = new THREE.Mesh(
+    new THREE.SphereGeometry(1, 24, 16),
+    new THREE.MeshPhysicalMaterial({ color: 0x0c2a3a, emissive: 0x2bb8e6, emissiveIntensity: 0.35,
+      roughness: 0.04, metalness: 0.2, clearcoat: 1, clearcoatRoughness: 0.02 })
+  );
+  canopy.scale.set(0.36, 0.95, 0.34);
+  canopy.position.set(0, 1.25, 0.82);
+  player.add(canopy);
+
+  // Accent stripes inset along each wing's leading edge, plus wingtip lights.
+  const accentMat = new THREE.MeshPhysicalMaterial({ color: 0xff5fd2, emissive: 0xff3fc0, emissiveIntensity: 0.5,
+    roughness: 0.3, metalness: 0.3, clearcoat: 1 });
+  const lead = new THREE.Vector2(3.5 - 1.25, -1.55 - 0.05);
+  const leadAngle = Math.atan2(lead.y, lead.x);
+  for (const sx of [-1, 1]){
+    const stripe = new THREE.Mesh(new THREE.BoxGeometry(lead.length() * 0.85, 0.16, 0.06), accentMat);
+    stripe.position.set(sx * (1.25 + 3.5) / 2, (0.05 - 1.55) / 2 - 0.22, 0.38);
+    stripe.rotation.z = sx * leadAngle;
+    player.add(stripe);
+
+    const tip = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: GLOW_TEX, color: 0xff5fd2, transparent: true, opacity: 0.9,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    }));
+    tip.scale.set(1.1, 1.1, 1); tip.position.set(sx * 3.5, -1.9, 0.4);
+    player.add(tip);
+  }
+
+  // Twin engines tucked into the tail notch: dark nozzle + hot core glow.
+  const nozzleMat = new THREE.MeshPhysicalMaterial({ color: 0x1a222c, roughness: 0.45, metalness: 0.85 });
+  for (const sx of [-1, 1]){
+    const nozzle = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.42, 0.7, 14), nozzleMat);
+    nozzle.position.set(sx * 0.72, -2.75, 0.15);
+    player.add(nozzle);
+    const glow = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: GLOW_TEX, color: 0x36d6ff, transparent: true, opacity: 0.75,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    }));
+    glow.scale.set(1.5, 2.1, 1); glow.position.set(sx * 0.72, -3.25, 0.15);
+    player.add(glow);
+  }
 }
 player.position.set(0, -30, 0);
 scene.add(player);
@@ -714,7 +756,7 @@ function spawnEnemy(entry, speed){
   const g = new THREE.Group();
 
   // The bubble's actual body: a real lit sphere (see the lights above), sunk
-  // behind the ring/glyph so its near cap sits just short of them — in the
+  // behind the glyph so its near cap sits just short of it — in the
   // orthographic camera its silhouette is still a full circle regardless of
   // that depth, so nothing about its on-screen size changes.
   const bubble = new THREE.Mesh(
@@ -734,29 +776,18 @@ function spawnEnemy(entry, speed){
   plane.position.z = 1;
   // Billboarded against the camera's fixed tilt so the glyph itself stays
   // perfectly square-on and legible — the drill depends on reading it at a
-  // glance, so only the ring/bubble/halo should show the tilt, not the text.
+  // glance, so only the bubble/halo should show the tilt, not the text.
   plane.rotation.x = CAM_TILT;
   g.add(plane);
 
-  const ring = new THREE.Mesh(
-    // Held clear of the sphere's own radius (4) with a visible gap, instead of
-    // overlapping its edge — sitting right on the silhouette made the ring
-    // read as a coin's rim and hid the one strip of bare, shaded surface that
-    // would otherwise sell "ball", not "disc".
-    new THREE.RingGeometry(4.5, 5.0, 40),
-    new THREE.MeshBasicMaterial({ color: 0xff5fd2, transparent: true, opacity: 0.7,
-      side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false })
-  );
-  // Left flat (world-plane) on purpose: the camera's own tilt is what makes
-  // it read as an ellipse wrapping the sphere now, not a per-object hack.
-  g.add(ring);
-
   const halo = new THREE.Sprite(new THREE.SpriteMaterial({
-    map: GLOW_TEX, color: 0xff5fd2, transparent: true, opacity: 0.07,
+    map: GLOW_TEX, color: 0xff5fd2, transparent: true, opacity: 0.16,
     blending: THREE.AdditiveBlending, depthWrite: false,
   }));
-  // Smaller and dimmer than before — this used to wash additively right over
-  // the sphere's face and flatten its lit gradient into a uniform glow disc.
+  // No flat ring outline any more — state (targeting/wounded/near-match) is
+  // read from this halo's color/opacity and the sphere's own emissive tint
+  // instead, so the bubble stays a solid 3D object instead of a 2D glyph
+  // wearing a vector-art hoop.
   halo.scale.set(10, 10, 1); halo.position.z = -1;
   g.add(halo);
 
@@ -765,7 +796,7 @@ function spawnEnemy(entry, speed){
   scene.add(g);
 
   enemies.push({
-    g, bubble, plane, ring, halo, entry,
+    g, bubble, plane, halo, entry,
     x0: x, y: g.position.y,
     speed, drift: 0.5 + Math.random() * 1.1,
     phase: Math.random() * Math.PI * 2,
@@ -1227,7 +1258,6 @@ function update(dt){
   // Floor is -33, not the screen edge: the typed-romaji box occupies the bottom
   // ~12% of the view, and flying the ship down into it looks like a collision.
   player.position.y = THREE.MathUtils.clamp(player.position.y, -33, -8);
-  player.userData.ring.rotation.z += dt * 0.7;
 
   if (S.invuln > 0){
     S.invuln -= dt;
@@ -1270,7 +1300,6 @@ function update(dt){
     e.age += dt;
     e.g.position.y -= e.speed * dt;
     e.g.position.x = e.x0 + Math.sin(e.age * e.drift + e.phase) * 5.5;
-    e.ring.rotation.z -= dt * 0.9;
 
     // Wounded: a shot connected, typing it now (not required) scores a bonus.
     // Miss the window and it regenerates — no penalty, just an opportunity gone.
@@ -1287,20 +1316,18 @@ function update(dt){
       // Pulses faster as the window runs out — a visible countdown to "regenerates".
       const urgency = 1 - e.woundTimer / WOUND_DURATION;
       const pulse = 0.55 + 0.45 * Math.sin(e.age * (6 + urgency * 10));
-      e.ring.material.color.setHex(0xff3344);
-      e.ring.material.opacity = pulse;
       e.halo.material.color.setHex(0xff3344);
+      e.halo.material.opacity = 0.16 + pulse * 0.26;
       // Emissive stays faint even here — a flat wash this strong was what
       // erased the sphere's lit gradient and made it read as a flat tile.
-      // The ring/halo flashing red already carries the "wounded" signal.
+      // The halo flashing red already carries the "wounded" signal.
       e.bubble.material.emissive.setHex(0xff3344);
       e.bubble.material.emissiveIntensity = pulse * 0.22;
     } else {
-      e.ring.material.color.setHex(isTarget ? 0x7dffb0 : nearMatch ? 0x9ff6ff : 0xff5fd2);
-      e.ring.material.opacity = isTarget ? 1 : nearMatch ? 0.85 : 0.6;
-      e.halo.material.color.setHex(isTarget ? 0x7dffb0 : 0xff5fd2);
-      e.bubble.material.emissive.setHex(isTarget ? 0x7dffb0 : 0xff5fd2);
-      e.bubble.material.emissiveIntensity = isTarget ? 0.1 : 0.04;
+      e.halo.material.color.setHex(isTarget ? 0x7dffb0 : nearMatch ? 0x9ff6ff : 0xff5fd2);
+      e.halo.material.opacity = isTarget ? 0.4 : nearMatch ? 0.3 : 0.16;
+      e.bubble.material.emissive.setHex(isTarget ? 0x7dffb0 : nearMatch ? 0x9ff6ff : 0xff5fd2);
+      e.bubble.material.emissiveIntensity = isTarget ? 0.16 : nearMatch ? 0.1 : 0.04;
     }
 
     // Escaped the field.
