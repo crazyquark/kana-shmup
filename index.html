@@ -112,6 +112,16 @@
     opacity:.55}
   .stats strong{font-size:26px;color:var(--cyan);font-weight:700}
   .hint{font-size:13px;opacity:.42;letter-spacing:.16em;text-transform:uppercase}
+  #oDetail{width:min(640px,92vw);display:flex;flex-direction:column;align-items:center;gap:10px}
+  .mnemoHead{font-size:12px;letter-spacing:.22em;text-transform:uppercase;opacity:.55}
+  .mnemos{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;width:100%}
+  .mnemo{background:rgba(255,95,210,.06);border:1px solid rgba(255,95,210,.22);
+    border-radius:12px;padding:12px 14px;text-align:left}
+  .mnemo b{font-size:34px;font-weight:700;color:#fff;margin-right:8px;
+    font-family:'Noto Sans JP','Hiragino Sans','Yu Gothic',Meiryo,sans-serif}
+  .mnemo span{font-size:15px;letter-spacing:.12em;text-transform:uppercase;color:var(--cyan)}
+  .mnemo p{margin:6px 0 0;font-size:14px;line-height:1.4;opacity:.85}
+  .mnemoRest{font-size:14px;opacity:.6}
 
   /* ---------- mobile on-screen keyboard ----------
      Shown only on coarse-pointer (touch) devices, only while a run is live.
@@ -209,7 +219,7 @@
     <div><span>Destroyed</span><strong id="oKills">0</strong></div>
     <div><span>Accuracy</span><strong id="oAcc">0%</strong></div>
   </div>
-  <p id="oDetail"></p>
+  <div id="oDetail"></div>
   <button class="big" id="againBtn">Again</button>
   <div class="hint">Backspace clears · Esc returns to menu</div>
 </div>
@@ -376,6 +386,129 @@ if (ROMAJI.length !== HIRAGANA.length || ROMAJI.length !== KATAKANA.length)
 // digraphs (きゃ, しゃ …). A difficulty level is just a prefix cutoff.
 const DIFFICULTY_CUTOFF = [46, 71, 104];
 const DIFFICULTY_NAME = ['Basic kana', '+ Dakuten / handakuten (゛゜)', '+ Combined kana (きゃ, しゃ …)'];
+
+// Memory hooks shown on the game-over screen for the kana you keep missing.
+// Only the 46 basic shapes need a hand-written hook per script; dakuten and
+// digraph entries are explained in terms of the basic kana they're built from.
+const MNEMO_H = [
+  'A cross with a swirl looping round it — "Ah!", it got tangled.',
+  'Two eels swimming side by side: "ee".',
+  'Someone doubled over from a punch to the gut: "oof" — u.',
+  'A dancer with a feather on her head, one leg kicked out: "eh!"',
+  'Like あ, but a spark flies off the top right: "Oh!"',
+  'A karate chop with a spark beside it: "Ka!"',
+  'A key — two teeth cut across the shaft, loop at the bottom.',
+  'An open bird beak going "coo".',
+  'A keg on its stand: the post on the left holds it up — "ke".',
+  'Two short coils lying flat: "co-il" — ko.',
+  'A saw blade cutting down through a curve: "sa(w)".',
+  'A single fishhook, like a long strand of hair on "she".',
+  'A rope hanging from a beam with a loop to sit in: a "swing" — su.',
+  'A mouth saying "say cheese" with one big fang hanging down.',
+  'A zig-zag of thread being sewn: "so(w)".',
+  'The letters t and a squashed together: "ta".',
+  'A cheerleader: arms crossed up top, big round belly — "chee(r)".',
+  'A tsunami wave curling over: "tsu".',
+  'A hand reaching out — te (手) is "hand".',
+  'A thorn stuck in a toe: "to(e)".',
+  'A cross next to a knot: "na" — knot.',
+  'A knee bent beside two lines: "knee" — ni.',
+  'A noodle twirled round a chopstick: "nu(dles)".',
+  'A cat (neko) curled up, tail looping at the end: "ne".',
+  'One sweeping stroke — a "no entry" swirl: no.',
+  'A tall post next to a laughing loop: "Ha!"',
+  'A big grin: "hee hee".',
+  'Mount Fuji with drops of snow melting at its sides: "fu".',
+  'A small hill: "heh, that\'s no mountain".',
+  'Like は with an extra bar — a chimney on the "ho(me)".',
+  'A cross with a long necklace looping below: "ma(ma)".',
+  'Looks like the number 21: "me" turning twenty-one.',
+  'A cow with a loop for a tail: "moo".',
+  'An eye — me (目) means "eye".',
+  'A fishhook with two bars catching "mo(re)" fish.',
+  'A yak with a horn sticking out: "ya(k)".',
+  'A fish swimming through a U-turn: "yu".',
+  'A yo-yo dangling from its string: "yo".',
+  'A rabbit sitting up, one ear raised: "ra(bbit)".',
+  'Two reeds standing by a river: "ri(ver)".',
+  'A road that curls into a loop at the end: "ru".',
+  'A man kneeling, leg kicked out to the right: "re".',
+  'Like る but the road just ends — no loop: "ro(ad)".',
+  'A man waving with a curved arm: "wa(ve)".',
+  'A rider on a bike shouting "whoa": wo.',
+  'A cursive lowercase n.',
+];
+const MNEMO_K = [
+  'An axe: a flat top with the blade swinging down — "a(xe)".',
+  'A person leaning on a stick: "ee".',
+  'う with a roof on top — "oo", a little hut.',
+  'An I-beam in an "e(levator)" shaft.',
+  'An opera singer with arms flung out: "Oh!"',
+  'Like か without its spark — a bare karate chop: "ka".',
+  'A key with two teeth: "ki".',
+  'A bird\'s beak going "coo": ku.',
+  'A tilted K: "ke".',
+  'A square corner: "co(rner)".',
+  'Two posts holding up a bar — a saw-horse: "sa".',
+  'Smiling up: strokes stack on the LEFT and the sweep rises UP — shi.',
+  'A swing seat hanging from its rope: "su".',
+  'Like せ, made angular: "se".',
+  'One tick, then a stroke falling DOWN from the top — "so", sewing down.',
+  'Like ク with a bar across its middle: "ta(co)".',
+  'A cheerleader with arms up and a pom-pom: "chi".',
+  'Strokes along the TOP, sweep comes DOWN — the tsunami crashing: tsu.',
+  'A telephone pole: "te(lephone)".',
+  'A post with a toe sticking out: "to(e)".',
+  'A cross with a knife-like leg: "na" — knife.',
+  'Two lines — ni (二) is "two".',
+  'Chopsticks lifting a noodle: "nu".',
+  'A necklace with a pendant: "ne(cklace)".',
+  'A single slash: "No!"',
+  'Two strokes spreading like a laugh: "ha".',
+  'A heel with a hook: "hee(l)".',
+  'The edge of Mount Fuji: "fu".',
+  'A hill — same as へ: he.',
+  'A holy cross with two legs: "ho(ly)".',
+  'A mama\'s apron string: "ma".',
+  'Three lines: "mi" — think "three mice".',
+  'A cow\'s nose: "moo".',
+  'An X marking a mess: "me(ss)".',
+  'Like も with straight lines: "mo(re)".',
+  'A yak\'s horn again, angular: "ya".',
+  'A U-turn on its side: "yu".',
+  'A backwards E — "yo", like a yo-yo trick.',
+  'A radio antenna on a box: "ra(dio)".',
+  'Like り — reeds by the river: "ri".',
+  'Two legs, one kicked out: "ru(n)".',
+  'A check mark: "re", ready.',
+  'A box — a robot\'s head: "ro(bot)".',
+  'A wine glass seen from the side: "wa".',
+  'ワ with an extra bar: "wo".',
+  'Like ソ, but the last stroke rises UP from the bottom — n.',
+];
+const DAKUTEN_ROWS = [
+  { base: 5,  mark: '゛', sound: 'k → g' },
+  { base: 10, mark: '゛', sound: 's → z' },
+  { base: 15, mark: '゛', sound: 't → d' },
+  { base: 25, mark: '゛', sound: 'h → b' },
+  { base: 25, mark: '゜', sound: 'h → p' },
+];
+const DIGRAPH_BASE = [6, 11, 16, 21, 26, 31, 39, 47, 52, 62, 67];
+function mnemonic(key){
+  const script = key[0], idx = parseInt(key.slice(1), 10);
+  const glyphs = script === 'h' ? HIRAGANA : KATAKANA;
+  if (idx < 46) return (script === 'h' ? MNEMO_H : MNEMO_K)[idx];
+  if (idx < 71){
+    const o = idx - 46, row = DAKUTEN_ROWS[Math.floor(o / 5)], b = row.base + o % 5;
+    const markName = row.mark === '゜' ? 'little circle' : 'two ticks';
+    let tip = `${glyphs[b]} (${ROMAJI[b]}) + ${row.mark} ${markName}: ${row.sound}.`;
+    if (idx === 57 || idx === 58) tip += ` Rare — sounds just like ${glyphs[idx - 5]}.`;
+    return tip;
+  }
+  const o = idx - 71, b = DIGRAPH_BASE[Math.floor(o / 3)], c = o % 3;
+  const small = (script === 'h' ? 'ゃゅょ' : 'ャュョ')[c];
+  return `${glyphs[b]} (${ROMAJI[b]}) + small ${small} (${['ya', 'yu', 'yo'][c]}): squeeze into one beat — ${ROMAJI[idx]}.`;
+}
 
 function buildPool(mode, difficulty = 3){
   const cutoff = DIFFICULTY_CUTOFF[difficulty - 1];
@@ -1276,14 +1409,39 @@ function gameOver(){
     .map(([k, v]) => {
       const idx = parseInt(k.slice(1), 10);
       const glyph = k[0] === 'h' ? HIRAGANA[idx] : KATAKANA[idx];
-      return { glyph, romaji: ROMAJI[idx], ratio: v.miss / (v.seen + v.miss), miss: v.miss };
+      return { key: k, glyph, romaji: ROMAJI[idx], ratio: v.miss / (v.seen + v.miss), miss: v.miss };
     })
     .sort((a, b) => (b.ratio * b.miss) - (a.ratio * a.miss))
     .slice(0, 6);
 
-  el('oDetail').textContent = weak.length
-    ? 'Work on: ' + weak.map(w => `${w.glyph} (${w.romaji})`).join('  ·  ')
-    : 'Clean run — nothing worth re-drilling.';
+  const box = el('oDetail');
+  box.replaceChildren();
+  if (!weak.length){
+    box.textContent = 'Clean run — nothing worth re-drilling.';
+  } else {
+    const head = document.createElement('div');
+    head.className = 'mnemoHead';
+    head.textContent = 'Work on these';
+    const cards = document.createElement('div');
+    cards.className = 'mnemos';
+    for (const w of weak.slice(0, 3)){
+      const card = document.createElement('div');
+      card.className = 'mnemo';
+      const g = document.createElement('b'); g.textContent = w.glyph;
+      const r = document.createElement('span'); r.textContent = w.romaji;
+      const tip = document.createElement('p'); tip.textContent = mnemonic(w.key);
+      card.append(g, r, tip);
+      cards.append(card);
+    }
+    box.append(head, cards);
+    const rest = weak.slice(3);
+    if (rest.length){
+      const more = document.createElement('div');
+      more.className = 'mnemoRest';
+      more.textContent = 'Also shaky: ' + rest.map(w => `${w.glyph} (${w.romaji})`).join('  ·  ');
+      box.append(more);
+    }
+  }
 
   el('overScreen').classList.remove('hidden');
   syncMobileUI();
@@ -1671,7 +1829,7 @@ window.KanaShmup = {
   // Deterministic spawn, used by the test suite to exercise every romaji
   // without waiting on the wave timer.
   spawn: (entry, kind) => { spawnEnemy(entry, 0, kind); return enemies[enemies.length - 1]; },
-  woundEnemy, useBomb, syncBombBadge,   // exposed so tests can drive these without waiting on auto-fire/streaks
+  mnemonic, woundEnemy, useBomb, syncBombBadge,   // exposed so tests can drive these without waiting on auto-fire/streaks
   kanaTexture,   // so the tests can measure whether a glyph fits its canvas
 };
 </script>

@@ -188,6 +188,10 @@ await page.evaluate(() => { KanaShmup.state.bombs = 0; KanaShmup.syncBombBadge()
 
 /* ---------- game over ---------- */
 await page.evaluate(() => {
+  // Two badly-missed basic kana, so the cards show hand-written hooks and not
+  // only the derived digraph tips.
+  KanaShmup.mastery.h22 = { seen: 3, ok: 0, miss: 3 };   // ぬ
+  KanaShmup.mastery.k17 = { seen: 3, ok: 0, miss: 3 };   // ツ
   KanaShmup.state.lives = 1;
   KanaShmup.enemies.filter(e => e.alive).forEach(e => { e.g.position.y = -59; });
 });
@@ -195,6 +199,22 @@ await page.waitForTimeout(800);
 check(await page.locator('#overScreen').isVisible(), 'game over screen appears when lives run out');
 const detail = await page.locator('#oDetail').innerText();
 check(detail.length > 0, `game over names the weak kana ("${detail.slice(0, 70)}…")`);
+const cards = await page.locator('#oDetail .mnemo').evaluateAll(els => els.map(c => ({
+  glyph: c.querySelector('b')?.textContent, tip: c.querySelector('p')?.textContent ?? '',
+})));
+check(cards.length >= 1 && cards.length <= 3, `game over shows mnemonic cards for the weakest kana (${cards.length})`);
+check(cards.every(c => c.glyph && c.tip.length > 15),
+  `every card carries a mnemonic ("${cards[0]?.glyph}: ${cards[0]?.tip.slice(0, 60)}…")`);
+const mnemoAudit = await page.evaluate(() => {
+  const keys = [];
+  for (const s of ['h', 'k']) for (let i = 0; i < KanaShmup.ROMAJI.length; i++) keys.push(s + i);
+  const tips = keys.map(k => KanaShmup.mnemonic(k));
+  const basic = keys.filter(k => +k.slice(1) < 46).map(k => KanaShmup.mnemonic(k));
+  return { total: keys.length, missing: keys.filter((k, i) => !tips[i] || tips[i].length < 15),
+    basicUnique: new Set(basic).size, basicCount: basic.length };
+});
+check(mnemoAudit.missing.length === 0, `all ${mnemoAudit.total} kana have a mnemonic (missing: ${mnemoAudit.missing.join(',') || 'none'})`);
+check(mnemoAudit.basicUnique === mnemoAudit.basicCount, `basic-kana mnemonics are all distinct (${mnemoAudit.basicUnique}/${mnemoAudit.basicCount})`);
 await page.screenshot({ path: 'shot-gameover.png' });
 
 await page.click('#againBtn');
