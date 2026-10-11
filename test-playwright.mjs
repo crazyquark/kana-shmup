@@ -171,7 +171,7 @@ await page.evaluate(() => {
   KanaShmup.state.invuln = 0;
   KanaShmup.player.visible = true;
   const spawned = [['か', 'ka', 'h5'], ['つ', 'tsu', 'h17'], ['きゃ', 'kya', 'h71']].map(([glyph, romaji, key], i) => {
-    const e = KanaShmup.spawn({ glyph, romaji, key });
+    const e = KanaShmup.spawn({ glyph, romaji, key }, i);   // one of each alien hull
     e.g.position.y = 28 - i * 19;
     e.g.position.x = (i - 1) * 20;
     e.x0 = e.g.position.x; e.speed = 0; e.drift = 0;

@@ -767,16 +767,112 @@ function updateEffects(dt){
    6. ENEMIES
    ========================================================================== */
 
+// Alien hulls mounted behind each enemy's core sphere. Geometry/materials are
+// shared across every spawn (enemies are dropped without disposal), and only
+// the core's material is per-enemy since its emissive tint carries state.
+const ALIEN = (() => {
+  const hull = new THREE.MeshPhysicalMaterial({ color: 0x2b2046, emissive: 0x16082a, emissiveIntensity: 0.7,
+    roughness: 0.5, metalness: 0.65, clearcoat: 0.35, clearcoatRoughness: 0.45 });
+  const plate = new THREE.MeshPhysicalMaterial({ color: 0x5e4b8c, emissive: 0x241038, emissiveIntensity: 0.6,
+    roughness: 0.28, metalness: 0.6, clearcoat: 1, clearcoatRoughness: 0.1 });
+  const glow = color => new THREE.SpriteMaterial({ map: GLOW_TEX, color, transparent: true, opacity: 0.95,
+    blending: THREE.AdditiveBlending, depthWrite: false });
+  const geo = {
+    saucer: new THREE.CylinderGeometry(4.1, 5.7, 1.1, 48),
+    taper: new THREE.CylinderGeometry(0.35, 1, 1, 12),
+    spike: new THREE.ConeGeometry(1, 1, 12),
+    shell: new THREE.SphereGeometry(1, 28, 18),
+  };
+  const UP = new THREE.Vector3(0, 1, 0);
+  // Mesh stretched from a to b, thin end at b. Every limb here is rotated about
+  // Z only, so local Z stays world Z and `flat` squashes it into a blade.
+  function limb(parent, g, mat, a, b, r, flat = 1){
+    const A = new THREE.Vector3(...a), B = new THREE.Vector3(...b);
+    const d = B.clone().sub(A), len = d.length();
+    const m = new THREE.Mesh(g, mat);
+    m.position.copy(A).addScaledVector(d, 0.5);
+    m.quaternion.setFromUnitVectors(UP, d.normalize());
+    m.scale.set(r, len, r * flat);
+    parent.add(m);
+    return m;
+  }
+  function light(parent, mat, x, y, z, s){
+    const sp = new THREE.Sprite(mat); sp.scale.set(s, s, 1); sp.position.set(x, y, z);
+    parent.add(sp);
+  }
+  const pinkLight = glow(0xff5fd2), limeLight = glow(0xb6ff6a), violetLight = glow(0xb48cff);
+
+  function saucer(){
+    const h = new THREE.Group();
+    const disc = new THREE.Mesh(geo.saucer, hull);
+    disc.rotation.x = Math.PI / 2;          // narrow face toward the camera, slope catches the light
+    disc.position.z = -5.2;
+    h.add(disc);
+    for (let i = 0; i < 6; i++){
+      const a = (i + 0.5) / 6 * Math.PI * 2, c = Math.cos(a), sn = Math.sin(a);
+      limb(h, geo.taper, plate, [c * 5.5, sn * 5.5, -4.9], [c * 3.9, sn * 3.9, -4.4], 0.5, 0.6);
+    }
+    const lights = new THREE.Group();
+    for (let i = 0; i < 8; i++){
+      const a = i / 8 * Math.PI * 2;
+      light(lights, i % 2 ? pinkLight : violetLight, Math.cos(a) * 4.95, Math.sin(a) * 4.95, -4.4, 1.05);
+    }
+    h.add(lights);
+    return { h, anim: t => { lights.rotation.z = t * 1.1; } };
+  }
+
+  function crab(){
+    const h = new THREE.Group();
+    const shell = new THREE.Mesh(geo.shell, plate);
+    shell.scale.set(5.1, 4.1, 1.5); shell.position.z = -5.6;
+    h.add(shell);
+    for (const sx of [-1, 1]){
+      limb(h, geo.spike, hull, [sx * 1.7, 2.6, -5], [sx * 3.0, 6.0, -5], 0.55);
+      light(h, limeLight, sx * 1.5, 3.3, -1.6, 1.0);
+    }
+    const claws = [-1, 1].map(sx => {
+      const arm = new THREE.Group();
+      arm.position.set(sx * 3.4, -0.6, -4.8);
+      limb(arm, geo.taper, hull, [0, 0, 0], [sx * 2.3, -3.1, 0], 0.8);
+      limb(arm, geo.spike, plate, [sx * 2.3, -3.1, 0], [sx * 0.9, -5.6, 0], 0.55);
+      limb(arm, geo.spike, plate, [sx * 2.3, -3.1, 0], [sx * 3.0, -5.7, 0], 0.42);
+      h.add(arm);
+      return { arm, sx };
+    });
+    return { h, anim: t => { for (const c of claws) c.arm.rotation.z = c.sx * Math.sin(t * 2.6) * 0.16; } };
+  }
+
+  function manta(){
+    const h = new THREE.Group();
+    for (let i = 0; i < 3; i++){
+      const a = Math.PI / 2 + i * Math.PI * 2 / 3;
+      const c = Math.cos(a), sn = Math.sin(a);
+      limb(h, geo.spike, hull, [c * 3.0, sn * 3.0, -4.8], [c * 8.2, sn * 8.2, -4.8], 2.5, 0.28);
+      light(h, pinkLight, c * 7.9, sn * 7.9, -4.2, 1.0);
+      const b = a + Math.PI / 3;
+      limb(h, geo.spike, plate, [Math.cos(b) * 2.6, Math.sin(b) * 2.6, -4.6],
+        [Math.cos(b) * 4.9, Math.sin(b) * 4.9, -4.6], 0.5);
+    }
+    return { h, anim: t => { h.rotation.z = t * 0.45; } };
+  }
+
+  const kinds = [saucer, crab, manta];
+  return (kind = Math.floor(Math.random() * kinds.length)) => kinds[kind % kinds.length]();
+})();
+
 const enemies = [];
-function spawnEnemy(entry, speed){
+function spawnEnemy(entry, speed, kind){
   const g = new THREE.Group();
 
-  // The bubble's actual body: a real lit sphere (see the lights above), sunk
+  const alien = ALIEN(kind);
+  g.add(alien.h);
+
+  // The ship's glowing core: a real lit sphere (see the lights above), sunk
   // behind the glyph so its near cap sits just short of it — in the
   // orthographic camera its silhouette is still a full circle regardless of
   // that depth, so nothing about its on-screen size changes.
   const bubble = new THREE.Mesh(
-    new THREE.SphereGeometry(4, 28, 20),
+    new THREE.SphereGeometry(3.8, 28, 20),
     new THREE.MeshPhysicalMaterial({ color: 0x6a86d9, transparent: true, opacity: 0.94,
       roughness: 0.12, metalness: 0.2, clearcoat: 1, clearcoatRoughness: 0.08,
       depthWrite: false })
@@ -812,7 +908,7 @@ function spawnEnemy(entry, speed){
   scene.add(g);
 
   enemies.push({
-    g, bubble, plane, halo, entry,
+    g, bubble, plane, halo, entry, anim: alien.anim,
     x0: x, y: g.position.y,
     speed, drift: 0.5 + Math.random() * 1.1,
     phase: Math.random() * Math.PI * 2,
@@ -1316,6 +1412,7 @@ function update(dt){
     e.age += dt;
     e.g.position.y -= e.speed * dt;
     e.g.position.x = e.x0 + Math.sin(e.age * e.drift + e.phase) * 5.5;
+    e.anim(e.age + e.phase);
 
     // Wounded: a shot connected, typing it now (not required) scores a bonus.
     // Miss the window and it regenerates — no penalty, just an opportunity gone.
@@ -1573,7 +1670,7 @@ window.KanaShmup = {
   liveEnemies: () => enemies.filter(e => e.alive).map(e => e.entry),
   // Deterministic spawn, used by the test suite to exercise every romaji
   // without waiting on the wave timer.
-  spawn: (entry) => { spawnEnemy(entry, 0); return enemies[enemies.length - 1]; },
+  spawn: (entry, kind) => { spawnEnemy(entry, 0, kind); return enemies[enemies.length - 1]; },
   woundEnemy, useBomb, syncBombBadge,   // exposed so tests can drive these without waiting on auto-fire/streaks
   kanaTexture,   // so the tests can measure whether a glyph fits its canvas
 };
