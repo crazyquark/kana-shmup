@@ -613,9 +613,12 @@ const player = new THREE.Group();
   // its edges catch the key light — reads as a machined airframe rather than
   // primitives bolted together. Kept mid-toned with only a faint emissive so
   // the lighting shows; a bright emissive hull just blooms out to white.
+  // Angular side blades that jut forward into prongs (Vic Viper / Ikaruga
+  // lineage) rather than swept-back airliner wings.
   const half = [
-    [0, 3.7], [0.42, 2.3], [0.62, 0.9], [1.25, 0.05], [3.5, -1.55],
-    [3.55, -2.15], [1.35, -1.75], [1.15, -2.85], [0.45, -2.45], [0, -2.65],
+    [0, 3.9], [0.5, 2.4], [0.8, 0.6], [1.6, 0.15], [2.55, 1.5], [2.85, 2.7],
+    [3.35, 1.5], [3.45, -1.0], [2.45, -2.05], [1.3, -1.65], [1.1, -2.9],
+    [0.45, -2.5], [0, -2.7],
   ];
   const outline = new THREE.Shape();
   outline.moveTo(...half[0]);
@@ -645,23 +648,36 @@ const player = new THREE.Group();
   canopy.position.set(0, 1.25, 0.82);
   player.add(canopy);
 
-  // Accent stripes inset along each wing's leading edge, plus wingtip lights.
+  // Engine/cannon pods riding the outer edge of each blade: dark barrel,
+  // pink accent band, hot muzzle at the front and a flame at the back.
   const accentMat = new THREE.MeshPhysicalMaterial({ color: 0xff5fd2, emissive: 0xff3fc0, emissiveIntensity: 0.5,
     roughness: 0.3, metalness: 0.3, clearcoat: 1 });
-  const lead = new THREE.Vector2(3.5 - 1.25, -1.55 - 0.05);
-  const leadAngle = Math.atan2(lead.y, lead.x);
+  const podMat = new THREE.MeshPhysicalMaterial({ color: 0x2c3a48, emissive: 0x0b2632, emissiveIntensity: 0.4,
+    roughness: 0.35, metalness: 0.8, clearcoat: 0.8 });
   for (const sx of [-1, 1]){
-    const stripe = new THREE.Mesh(new THREE.BoxGeometry(lead.length() * 0.85, 0.16, 0.06), accentMat);
-    stripe.position.set(sx * (1.25 + 3.5) / 2, (0.05 - 1.55) / 2 - 0.22, 0.38);
-    stripe.rotation.z = sx * leadAngle;
-    player.add(stripe);
+    const px = sx * 3.0;
+    const pod = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.44, 3.6, 16), podMat);
+    pod.position.set(px, 0.35, 0.4);
+    player.add(pod);
+    const cap = new THREE.Mesh(new THREE.ConeGeometry(0.36, 0.7, 16), podMat);
+    cap.position.set(px, 2.5, 0.4);
+    player.add(cap);
+    const band = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.28, 16), accentMat);
+    band.position.set(px, 1.1, 0.4);
+    player.add(band);
 
-    const tip = new THREE.Sprite(new THREE.SpriteMaterial({
+    const muzzle = new THREE.Sprite(new THREE.SpriteMaterial({
       map: GLOW_TEX, color: 0xff5fd2, transparent: true, opacity: 0.9,
       blending: THREE.AdditiveBlending, depthWrite: false,
     }));
-    tip.scale.set(1.1, 1.1, 1); tip.position.set(sx * 3.5, -1.9, 0.4);
-    player.add(tip);
+    muzzle.scale.set(0.9, 0.9, 1); muzzle.position.set(px, 2.9, 0.45);
+    player.add(muzzle);
+    const flame = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: GLOW_TEX, color: 0x36d6ff, transparent: true, opacity: 0.7,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    }));
+    flame.scale.set(1.2, 1.8, 1); flame.position.set(px, -1.75, 0.4);
+    player.add(flame);
   }
 
   // Twin engines tucked into the tail notch: dark nozzle + hot core glow.
