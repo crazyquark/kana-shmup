@@ -483,8 +483,8 @@ scene.fog = new THREE.FogExp2(0x05060b, 0.0032);
 // Everything else in the scene is unlit (MeshBasicMaterial/Sprite), so these
 // only matter to the enemy bubble's lit sphere below — they give it an actual
 // shaded highlight/terminator instead of a flat silhouette.
-scene.add(new THREE.AmbientLight(0x15182a, 0.4));
-const bubbleKey = new THREE.DirectionalLight(0xdcf3ff, 3.2);
+scene.add(new THREE.AmbientLight(0x15182a, 0.22));
+const bubbleKey = new THREE.DirectionalLight(0xdcf3ff, 5.5);
 bubbleKey.position.set(-20, 30, 60);
 scene.add(bubbleKey);
 const bubbleRim = new THREE.DirectionalLight(0xff6fe0, 1.3);
@@ -739,7 +739,11 @@ function spawnEnemy(entry, speed){
   g.add(plane);
 
   const ring = new THREE.Mesh(
-    new THREE.RingGeometry(3.6, 4.3, 40),
+    // Held clear of the sphere's own radius (4) with a visible gap, instead of
+    // overlapping its edge — sitting right on the silhouette made the ring
+    // read as a coin's rim and hid the one strip of bare, shaded surface that
+    // would otherwise sell "ball", not "disc".
+    new THREE.RingGeometry(4.5, 5.0, 40),
     new THREE.MeshBasicMaterial({ color: 0xff5fd2, transparent: true, opacity: 0.7,
       side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false })
   );
@@ -748,10 +752,12 @@ function spawnEnemy(entry, speed){
   g.add(ring);
 
   const halo = new THREE.Sprite(new THREE.SpriteMaterial({
-    map: GLOW_TEX, color: 0xff5fd2, transparent: true, opacity: 0.13,
+    map: GLOW_TEX, color: 0xff5fd2, transparent: true, opacity: 0.07,
     blending: THREE.AdditiveBlending, depthWrite: false,
   }));
-  halo.scale.set(13, 13, 1); halo.position.z = -1;
+  // Smaller and dimmer than before — this used to wash additively right over
+  // the sphere's face and flatten its lit gradient into a uniform glow disc.
+  halo.scale.set(10, 10, 1); halo.position.z = -1;
   g.add(halo);
 
   const x = (Math.random() - 0.5) * (viewW - 34);
@@ -1284,14 +1290,17 @@ function update(dt){
       e.ring.material.color.setHex(0xff3344);
       e.ring.material.opacity = pulse;
       e.halo.material.color.setHex(0xff3344);
+      // Emissive stays faint even here — a flat wash this strong was what
+      // erased the sphere's lit gradient and made it read as a flat tile.
+      // The ring/halo flashing red already carries the "wounded" signal.
       e.bubble.material.emissive.setHex(0xff3344);
-      e.bubble.material.emissiveIntensity = pulse * 0.8;
+      e.bubble.material.emissiveIntensity = pulse * 0.22;
     } else {
       e.ring.material.color.setHex(isTarget ? 0x7dffb0 : nearMatch ? 0x9ff6ff : 0xff5fd2);
       e.ring.material.opacity = isTarget ? 1 : nearMatch ? 0.85 : 0.6;
       e.halo.material.color.setHex(isTarget ? 0x7dffb0 : 0xff5fd2);
       e.bubble.material.emissive.setHex(isTarget ? 0x7dffb0 : 0xff5fd2);
-      e.bubble.material.emissiveIntensity = isTarget ? 0.35 : 0.15;
+      e.bubble.material.emissiveIntensity = isTarget ? 0.1 : 0.04;
     }
 
     // Escaped the field.
