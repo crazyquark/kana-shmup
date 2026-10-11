@@ -16,6 +16,33 @@ Prefer a local server? Anything works:
     python3 -m http.server 8765     # then open http://localhost:8765/
     node server.mjs                 # or the dependency-free Node server, :8080
 
+### Steam Deck / Steam Big Picture
+
+`steamdeck/kana-shmup.sh` opens the game fullscreen in a kiosk-mode browser,
+so it can be added to Steam and launched from Game Mode like any other game.
+
+1. **Get a browser.** In Desktop Mode, install Google Chrome from Discover
+   (Flathub). Chromium, Brave, Edge and Firefox also work; the script uses the
+   first one it finds, preferring Chromium-based ones for WebGL performance.
+2. **Put the game on the Deck**, e.g. `git clone` it into `~/Games/kana-shmup`,
+   then `chmod +x ~/Games/kana-shmup/steamdeck/kana-shmup.sh`.
+3. **Add it to Steam.** In Steam (Desktop Mode): *Games → Add a Non-Steam Game
+   to My Library → Browse*, set the file type to *All Files*, pick
+   `steamdeck/kana-shmup.sh`, then *Add Selected Programs*. Rename it to
+   "Kana Shmup" in its Properties.
+4. **Controls.** In the game's *Properties → Controller*, choose the
+   *Keyboard (WASD) and Mouse* template so the left stick flies the ship.
+   Type by tapping the in-game on-screen keyboard (the script turns it on with
+   `?touch=1`), or bring up Steam's keyboard with *Steam + X*.
+5. **Quit** with *Steam button → Exit Game*.
+
+Progress is saved in a dedicated browser profile under
+`~/.local/share/kana-shmup/`, separate from your normal browsing. The Deck needs
+to be online, since Three.js and the font come from a CDN. Optional overrides,
+set in Steam's launch options as `VAR=value %command%`: `KANA_URL` plays a hosted
+copy instead of the local file, and `KANA_BROWSER` forces a browser (a Flatpak
+app id like `org.chromium.Chromium`, or a command like `firefox`).
+
 ## Controls
 
 | Key | |

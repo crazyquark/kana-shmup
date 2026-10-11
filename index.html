@@ -1764,7 +1764,9 @@ renderDrillHint();
    the keyboard/mouse experience.
    ========================================================================== */
 
-const TOUCH = matchMedia('(pointer: coarse)').matches;
+// ?touch=1 forces touch mode on — for devices like the Steam Deck whose
+// browser reports a fine pointer (the trackpads) despite having no keyboard.
+const TOUCH = matchMedia('(pointer: coarse)').matches || new URLSearchParams(location.search).has('touch');
 const mobileKb = el('mobileKb');
 
 function syncMobileUI(){

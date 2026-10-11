@@ -486,6 +486,22 @@ const untypeable = await page.evaluate(async () => {
 check(untypeable.length === 0,
   `all 104 romaji are typeable and fire${untypeable.length ? ' — DEAD KEYS: ' + untypeable.join(' ') : ''}`);
 
+/* ---------- ?touch=1 forces touch mode on a fine-pointer device (Steam Deck) ---------- */
+check(!(await page.locator('#mobileKb').evaluate(n => n.classList.contains('show'))),
+  'desktop (fine pointer) does not show the on-screen keyboard');
+{
+  const deck = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+  deck.on('pageerror', e => errors.push('[touch=1] ' + e.message));
+  await deck.goto(URL + '?touch=1', { waitUntil: 'load' });
+  await deck.waitForFunction(() => window.KanaShmup, { timeout: 20000 });
+  await deck.click('#startBtn');
+  await deck.waitForFunction(() => window.KanaShmup.state.running, { timeout: 15000 });
+  await deck.waitForTimeout(300);
+  check(await deck.locator('#mobileKb').evaluate(n => n.classList.contains('show')),
+    '?touch=1 shows the on-screen keyboard even with a fine pointer');
+  await deck.close();
+}
+
 /* ---------- console must be clean ---------- */
 check(errors.length === 0, `no console errors or page errors${errors.length ? ':\n       ' + errors.join('\n       ') : ''}`);
 
