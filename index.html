@@ -666,43 +666,52 @@ const GLOW_TEX = radialTexture('rgba(255,255,255,0.95)', 'rgba(255,255,255,0)');
 
 /* ---------- starfield ---------- */
 // A custom shader instead of PointsMaterial so each star can twinkle on its
-// own phase (aPhase/aSize, driven by uTime) rather than the whole field
-// fading in lockstep.
+// own phase and carry its own tint. Sized in CSS pixels (uPixelRatio) — sized
+// in device pixels they shrank to sub-pixel specks on phones and retina.
 const starGeo = new THREE.BufferGeometry();
 {
-  const N = 900, pos = new Float32Array(N * 3), phase = new Float32Array(N), size = new Float32Array(N);
+  const N = 1100, pos = new Float32Array(N * 3), phase = new Float32Array(N),
+    size = new Float32Array(N), col = new Float32Array(N * 3);
+  const tints = [new THREE.Color(0xcfeaff), new THREE.Color(0xffffff), new THREE.Color(0x9fd8ff),
+    new THREE.Color(0xffd6f2), new THREE.Color(0xfff1c9)];
   for (let i = 0; i < N; i++){
     pos[i * 3]     = (Math.random() - 0.5) * 340;
     pos[i * 3 + 1] = (Math.random() - 0.5) * 240;
     pos[i * 3 + 2] = -60 - Math.random() * 140;
     phase[i] = Math.random() * Math.PI * 2;
-    size[i] = 0.55 + Math.random() * Math.random() * 2.2; // squared bias: mostly small, a few standout bright ones
+    size[i] = 1.4 + Math.pow(Math.random(), 3) * 5.5; // mostly small, a few standout bright ones
+    tints[Math.random() < 0.55 ? 0 : 1 + Math.floor(Math.random() * 4)].toArray(col, i * 3);
   }
   starGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   starGeo.setAttribute('aPhase', new THREE.BufferAttribute(phase, 1));
   starGeo.setAttribute('aSize', new THREE.BufferAttribute(size, 1));
+  starGeo.setAttribute('aColor', new THREE.BufferAttribute(col, 3));
 }
 const starMat = new THREE.ShaderMaterial({
-  uniforms: { uTime: { value: 0 }, map: { value: GLOW_TEX }, color: { value: new THREE.Color(0x9fd8ff) } },
+  uniforms: { uTime: { value: 0 }, uPixelRatio: { value: Math.min(devicePixelRatio, 2) } },
   vertexShader: `
     attribute float aPhase;
     attribute float aSize;
+    attribute vec3 aColor;
     uniform float uTime;
+    uniform float uPixelRatio;
     varying float vTwinkle;
+    varying vec3 vColor;
     void main(){
-      vTwinkle = 0.45 + 0.55 * sin(uTime * 1.4 + aPhase);
-      vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-      gl_PointSize = aSize * (260.0 / -mvPosition.z);
-      gl_Position = projectionMatrix * mvPosition;
+      vTwinkle = 0.62 + 0.38 * sin(uTime * 1.4 + aPhase);
+      vColor = aColor;
+      gl_PointSize = aSize * uPixelRatio;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
     }
   `,
   fragmentShader: `
-    uniform sampler2D map;
-    uniform vec3 color;
     varying float vTwinkle;
+    varying vec3 vColor;
     void main(){
-      vec4 tex = texture2D(map, gl_PointCoord);
-      gl_FragColor = vec4(color, tex.a * vTwinkle * 0.75);
+      float d = length(gl_PointCoord - 0.5) * 2.0;
+      float core = smoothstep(0.45, 0.0, d);
+      float glow = clamp(1.0 - d, 0.0, 1.0) * 0.35;
+      gl_FragColor = vec4(vColor, (core + glow) * vTwinkle);
     }
   `,
   transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
